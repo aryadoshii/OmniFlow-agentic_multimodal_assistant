@@ -51,6 +51,41 @@ class Settings(BaseSettings):
         description="Maximum allowed upload payload size in megabytes.",
     )
 
+    # OCR Configuration
+    ocr_language: str = Field(
+        default="eng",
+        alias="OCR_LANGUAGE",
+        description="Default language code for Tesseract OCR.",
+    )
+    tesseract_cmd: str | None = Field(
+        default=None,
+        alias="TESSERACT_CMD",
+        description="Optional explicit path to the tesseract executable.",
+    )
+    pdf_native_text_char_threshold: int = Field(
+        default=30,
+        alias="PDF_NATIVE_TEXT_CHAR_THRESHOLD",
+        ge=0,
+        description="Minimum characters required to consider a PDF page native text rather than scanned.",
+    )
+
+    # Speech-to-Text (faster-whisper) Configuration
+    whisper_model_size: str = Field(
+        default="tiny",
+        alias="WHISPER_MODEL_SIZE",
+        description="Whisper model size (tiny, base, small, medium, large). Default is lightweight tiny for CPU.",
+    )
+    whisper_device: str = Field(
+        default="cpu",
+        alias="WHISPER_DEVICE",
+        description="Device to run faster-whisper on (cpu or cuda).",
+    )
+    whisper_compute_type: str = Field(
+        default="int8",
+        alias="WHISPER_COMPUTE_TYPE",
+        description="Quantization/compute type for faster-whisper (int8, float32, float16).",
+    )
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

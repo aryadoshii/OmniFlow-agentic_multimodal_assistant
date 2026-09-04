@@ -21,6 +21,7 @@ class ExtractionMethod(str, Enum):
     DIRECT_INPUT = "direct_input"
     NATIVE_TEXT = "native_text"
     OCR = "ocr"
+    MIXED = "mixed"
     SPEECH_TO_TEXT = "speech_to_text"
 
 

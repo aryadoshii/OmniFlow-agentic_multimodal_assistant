@@ -6,7 +6,7 @@ from typing import AsyncGenerator
 from fastapi import FastAPI
 
 from omniflow.api.error_handlers import register_error_handlers
-from omniflow.api.routes import health, root
+from omniflow.api.routes import health, ingest, root
 from omniflow.config import get_settings
 from omniflow.logging import setup_logging
 
@@ -35,7 +35,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
-        description="Agentic Multimodal AI Assistant - Phase 1 Foundation",
+        description="Agentic Multimodal AI Assistant - Ingestion Gateway",
         lifespan=lifespan,
     )
 
@@ -45,6 +45,7 @@ def create_app() -> FastAPI:
     # Register modular routers
     app.include_router(root.router)
     app.include_router(health.router)
+    app.include_router(ingest.router)
 
     return app
 

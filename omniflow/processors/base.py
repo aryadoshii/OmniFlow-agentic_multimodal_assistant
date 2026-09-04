@@ -8,8 +8,8 @@ class BaseProcessor(ABC):
     """Minimal interface for modality-specific ingestion processors."""
 
     @abstractmethod
-    def can_process(self, mime_type: str) -> bool:
-        """Determines whether this processor supports the provided MIME type."""
+    def can_process(self, mime_type: str, filename: str | None = None) -> bool:
+        """Determines whether this processor supports the provided MIME type or filename."""
         pass
 
     @abstractmethod

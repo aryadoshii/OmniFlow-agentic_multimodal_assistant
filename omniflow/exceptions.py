@@ -62,6 +62,36 @@ class ProcessingFailureError(OmniFlowException):
         )
 
 
+class OCRProcessingError(ProcessingFailureError):
+    """Raised when OCR extraction fails due to binary issues or corrupt images."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message=message, details=details)
+        self.error_code = "OCR_PROCESSING_ERROR"
+
+
+class TranscriptionError(ProcessingFailureError):
+    """Raised when speech-to-text audio transcription fails or backend is unavailable."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message=message, details=details)
+        self.error_code = "TRANSCRIPTION_ERROR"
+
+
+class UploadValidationError(InvalidInputError):
+    """Raised when an uploaded file fails validation checks (size, extension, empty)."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message=message, details=details)
+        self.error_code = "UPLOAD_VALIDATION_ERROR"
+
+
 class ExternalProviderError(OmniFlowException):
     """Raised when an external API (such as Gemini) fails, times out, or errors."""
 

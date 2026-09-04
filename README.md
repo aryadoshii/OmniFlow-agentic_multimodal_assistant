@@ -2,67 +2,83 @@
 
 OmniFlow is an agentic multimodal assistant engineered for intelligent ingestion, autonomous planning, deterministic tool execution, conditional RAG, and multi-input synthesis.
 
-> **Current Status: Phase 1 (Foundation)**  
-> This repository currently contains the Phase 1 architectural foundation. Multimodal processing (OCR, PDF extraction, speech-to-text, YouTube transcript scraping), vector RAG, LangGraph orchestration, LLM reasoning, and UI components are scheduled for implementation in subsequent phases.
+> **Current Status: Phase 2 Implemented (Multimodal Ingestion Layer)**  
+> This repository currently contains the Phase 1 architectural foundation and Phase 2 multimodal ingestion layer. Downstream agent tools (YouTube transcripts, FAISS RAG), LangGraph orchestration, LLM reasoning, and UI components are scheduled for subsequent phases.
 
 ---
 
-## Architectural Overview
+## Status Summary
 
-The target end-to-end architecture follows a strictly deterministic-first, LLM-reasoning pipeline:
+### Implemented
+- **Phase 1: Architecture & Foundation**: Modular FastAPI structure, domain models (`NormalizedDocument`, `AgentState`), centralized configuration, exception hierarchy, error handlers, and logging.
+- **Phase 2: Multimodal Ingestion Layer**: Deterministic processors converting plain text, PDFs (native text with per-page OCR fallback), images (JPG/PNG via Tesseract OCR), and audio (WAV/MP3/M4A via faster-whisper) into unified `NormalizedDocument` representations.
 
-```
-User Request / Multi-modal Uploads
-              │
-              ▼
-   FastAPI Gateway (Modular Routes)
-              │
-              ▼
-   Multimodal Ingestion (Modality Processors)
-              │
-              ▼
-   Normalized Documents (Unified Schema)
-              │
-              ▼
-   Unified Context & Intent Classifier
-              │
-              ▼
-   LangGraph Orchestrator (Stateful Graph)
-              │
-      ┌───────┴───────┐
-      ▼               ▼
-Deterministic    Conditional
-Python Tools     FAISS Vector RAG
-      │               │
-      └───────┬───────┘
-              ▼
-   Gemini LLM Synthesizer
-              │
-              ▼
-   Structured OmniFlow Response
-```
-
-### Architectural Principles
-- **Modality-agnostic Normalization**: Raw inputs (text, images, PDFs, audio) are ingested into normalized domain models (`NormalizedDocument`) before reaching the agent.
-- **Deterministic Separation**: File parsing, OCR, audio transcription, URL detection, and mathematical/tabular operations use deterministic Python routines—the LLM is reserved for semantic planning and final synthesis.
-- **Safe Execution Traces**: Tracing captures non-sensitive operational metadata (operation name, status, duration) without logging credentials, full prompts, or raw binary payloads.
-- **Free-Tier Friendly**: Designed for local and zero-cost cloud deployment (FAISS local vector storage, standard Python runtimes, no mandatory paid SaaS).
+### Not Yet Implemented (Scheduled for Phases 3-5)
+- YouTube URL detection & transcript retrieval
+- FAISS local vector retrieval & conditional RAG
+- LangGraph orchestration, state machine & planner
+- Ambiguity clarification flow
+- Gemini LLM reasoning & synthesis
+- Frontend web UI
+- Docker containerization & cloud deployment
 
 ---
 
-## Phase 1 Components
+## Ingestion Architecture
 
-The following foundation has been established in Phase 1:
+```
+User Text / Uploaded Files (PDF, Image, Audio)
+                     │
+                     ▼
+             POST /ingest API
+                     │
+                     ▼
+          FileValidator & Limits Check
+          (Size, MIME, Extension, Non-empty)
+                     │
+                     ▼
+              IngestionService
+         (Deterministic Dispatcher)
+                     │
+     ┌───────────────┼───────────────┬───────────────┐
+     ▼               ▼               ▼               ▼
+TextProcessor   PDFProcessor    ImageProcessor  AudioProcessor
+ (Plain text)    (PyMuPDF)       (PIL + OCR)    (faster-whisper)
+                     │
+                     ▼
+          Native Text >= Threshold?
+             ├── Yes ──► Native text
+             └── No  ──► Per-page Tesseract OCR fallback
+                     │
+                     ▼
+        NormalizedDocument (Unified Model)
+  (Content, SourceType, ExtractionMethod, Metadata, Warnings)
+```
 
-- **Application Entry Point**: Clean FastAPI application factory in `omniflow/main.py` with lifespan event management.
-- **API Endpoints**: Modular routing featuring `GET /health` and `GET /` discovery endpoints.
-- **Configuration**: Centralized `pydantic-settings` loader in `omniflow/config.py` reading from environment variables with `.env.example`.
-- **Domain Models**: Robust Pydantic schemas in `omniflow/models/` for `NormalizedDocument`, `UserRequest`, `OmniFlowResponse`, `ExecutionTrace`, and `AgentState`.
-- **Architectural Contracts**: Minimal, unbloated abstract base interfaces for `BaseProcessor`, `BaseLLMProvider`, `BaseTool`, and `BaseVectorStore`.
-- **Exception Hierarchy**: Domain error classes (`InvalidInputError`, `UnsupportedFileError`, `ProcessingFailureError`, `ExternalProviderError`, `OrchestrationError`, `ConfigurationError`) in `omniflow/exceptions.py`.
-- **API Error Handling**: Global exception handlers in `omniflow/api/error_handlers.py` converting domain exceptions to uniform JSON responses without exposing internal stack traces.
-- **Centralized Logging**: Production-ready logging in `omniflow/logging.py` featuring execution time tracking and automated secret sanitization.
-- **Automated Tests**: Unit and integration test suite in `tests/` covering health checks, configuration, model validation, and exception handling.
+### Key Ingestion Strategies
+- **Deterministic Processor Selection**: Files are routed to processors based on a practical combination of file extension, declared MIME type, and processor format decoders.
+- **PDF Native/OCR Hybrid Fallback**: Every page is analyzed natively with PyMuPDF. If a page has meaningful text (>= threshold), native text is used. If a page is scanned or empty, PyMuPDF renders the page to an image and runs Tesseract OCR. Mixed PDFs are accurately labeled `ExtractionMethod.MIXED`.
+- **Lazy & Optional Speech-to-Text**: `faster-whisper` is loaded purely on demand when an audio file is processed. The app starts and handles text/PDF/images with zero Whisper overhead. Model size (`tiny` by default) and compute type (`int8`) are fully configurable for CPU/free-tier constraints.
+- **Safe Ephemeral Storage**: Uploads are processed in system temporary files outside the repository tree, guaranteeing cleanup upon completion or failure.
+
+---
+
+## Supported Input Formats
+
+| Modality | Supported Formats | Engine / Library | Extraction Method |
+|---|---|---|---|
+| **Text** | `.txt` | Native Python | `direct_input` |
+| **PDF** | `.pdf` | PyMuPDF (`pymupdf`) + OCR fallback | `native_text`, `ocr`, or `mixed` |
+| **Image** | `.jpg`, `.jpeg`, `.png` | Pillow + Tesseract (`pytesseract`) | `ocr` |
+| **Audio** | `.wav`, `.mp3`, `.m4a` | faster-whisper | `speech_to_text` |
+
+---
+
+## Local & System Dependencies
+
+In addition to Python packages, the following local tools are supported for full local capability:
+- **Tesseract OCR**: Required for image and scanned PDF OCR (`brew install tesseract` on macOS or `apt-get install tesseract-ocr` on Linux). If absent, PDF native text extraction continues to operate, while OCR requests raise a clear `OCRProcessingError`.
+- **FFmpeg**: Utilized by audio decoders (`brew install ffmpeg` on macOS or `apt-get install ffmpeg` on Linux).
 
 ---
 
@@ -71,86 +87,74 @@ The following foundation has been established in Phase 1:
 ### 1. Prerequisites
 - Python 3.11 or 3.12
 - pip package manager
+- (Optional for OCR/Audio): Tesseract OCR and FFmpeg
 
-### 2. Create and Activate a Virtual Environment
+### 2. Create and Activate Virtual Environment
 
-On macOS / Linux:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 ```
 
-On Windows:
-```cmd
-python -m venv .venv
-.venv\Scripts\activate
-```
-
 ### 3. Install Dependencies
 
-Install the minimal Phase 1 requirements:
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 4. Configure Environment Variables
 
-Create your local `.env` file from the provided template:
+Create your `.env` file:
 ```bash
 cp .env.example .env
 ```
 
-Review `.env` and adjust settings as needed:
+Available Phase 2 settings:
 ```env
 APP_ENV=development
 LOG_LEVEL=INFO
 HOST=127.0.0.1
 PORT=8000
-GEMINI_API_KEY=your_gemini_api_key_here
-LLM_MODEL=gemini-2.5-flash
 MAX_UPLOAD_SIZE_MB=25
+
+# OCR Configuration
+OCR_LANGUAGE=eng
+TESSERACT_CMD=
+PDF_NATIVE_TEXT_CHAR_THRESHOLD=30
+
+# Speech-to-Text (faster-whisper) Configuration
+WHISPER_MODEL_SIZE=tiny
+WHISPER_DEVICE=cpu
+WHISPER_COMPUTE_TYPE=int8
 ```
 
-> [!NOTE]
-> In Phase 1, `GEMINI_API_KEY` is not required for application startup or running tests. It will be required once LLM providers are introduced in Phase 2.
+### 5. Run the Application
 
-### 5. Run the FastAPI Application
-
-Start the local development server:
 ```bash
 uvicorn omniflow.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Once running, access:
-- **Root endpoint**: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
-- **Health check**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
-- **Interactive OpenAPI docs**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **Health Check**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+- **Ingestion Endpoint**: `POST http://127.0.0.1:8000/ingest`
+- **Interactive OpenAPI Documentation**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-### 6. Run the Test Suite
+### 6. Ingestion API Example
 
-Execute the automated tests using `pytest`:
+Using `curl`:
+```bash
+# Ingest plain text
+curl -X POST http://127.0.0.1:8000/ingest \
+  -F "text=Summarize this quarterly update."
+
+# Ingest multi-modal files
+curl -X POST http://127.0.0.1:8000/ingest \
+  -F "text=Review these documents." \
+  -F "files=@financial_report.pdf" \
+  -F "files=@receipt.png"
+```
+
+### 7. Run the Test Suite
+
 ```bash
 pytest -v
 ```
-
----
-
-## Roadmap & Subsequent Phases
-
-- **Phase 2: Multimodal Ingestion Processors**
-  - Native text PDF extraction with Tesseract OCR fallback
-  - Image preprocessing and OCR
-  - Audio transcription (STT)
-  - Content-type routing and document normalization
-- **Phase 3: Deterministic Tools & Retrieval**
-  - YouTube URL detection and transcript extraction
-  - Local FAISS vector indexing and conditional RAG
-- **Phase 4: Agent Orchestration & Planning**
-  - LangGraph workflow construction
-  - Intent classification and ambiguity clarification check
-  - Minimum-tool planner and execution engine
-  - Provider integration with Google Gemini API
-- **Phase 5: Synthesis, User Interface & Deployment**
-  - Cross-input synthesis and execution trace reporting
-  - Lightweight UI for text, image, PDF, and audio uploads
-  - Docker containerization and cloud deployment
