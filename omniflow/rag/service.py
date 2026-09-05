@@ -19,6 +19,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from omniflow.config import get_settings
+from omniflow.exceptions import InvalidInputError
 from omniflow.models.document import NormalizedDocument
 from omniflow.rag.chunking import DocumentChunk, DocumentChunker
 from omniflow.rag.embeddings import EmbeddingService
@@ -190,20 +191,39 @@ class RAGService:
             synthesis step irrelevant context.
 
         Raises:
-            InvalidInputError: If query is empty/blank (propagated from
-                                EmbeddingService.embed_query).
+            InvalidInputError: If query is empty/blank, top_k is provided but
+                                is not a positive integer, or score_threshold
+                                is provided but falls outside [0.0, 1.0].
+                                Validated by this method directly so callers
+                                invoking RAGService.retrieve() outside of the
+                                ToolRegistry/Pydantic boundary (e.g. directly,
+                                or from a future orchestrator) still get a
+                                clear, typed rejection rather than a confusing
+                                downstream failure.
             EmbeddingGenerationError: Propagated as-is if query embedding fails.
             RAGRetrievalError: Propagated as-is if FAISS search fails.
         """
+        if not query or not query.strip():
+            raise InvalidInputError("query must be a non-empty string.")
+        if top_k is not None and (not isinstance(top_k, int) or isinstance(top_k, bool) or top_k <= 0):
+            raise InvalidInputError(
+                f"top_k must be a positive integer, got {top_k!r}.",
+                details={"top_k": str(top_k)},
+            )
+        if score_threshold is not None and not (0.0 <= score_threshold <= 1.0):
+            raise InvalidInputError(
+                f"score_threshold must be between 0.0 and 1.0, got {score_threshold!r}.",
+                details={"score_threshold": str(score_threshold)},
+            )
+
         settings = get_settings()
         resolved_top_k = top_k if top_k is not None else settings.rag_top_k
         resolved_threshold = (
             score_threshold if score_threshold is not None else settings.rag_similarity_threshold
         )
 
-        # Raises InvalidInputError for an empty/blank query -- intentionally
-        # not caught here: an empty query is malformed input, not a
-        # legitimate query that simply found no evidence.
+        # query blankness is already rejected above; EmbeddingService's own
+        # check remains as a defense-in-depth backstop, not the primary guard.
         query_vector = self._embedding_service.embed_query(query)
 
         if self._vector_store.count() == 0:

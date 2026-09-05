@@ -208,6 +208,22 @@ class TestPathologicalTinyChunks:
         assert all(len(c.content) >= 20 or len(chunks) == 1 for c in chunks)
         assert "x" in chunks[-1].content
 
+    def test_merged_trailing_chunk_may_exceed_chunk_size(self):
+        """Documents the actual, intentional chunk_size contract: chunk_size
+        is a normal target/max, EXCEPT that the pathological-tail merge (see
+        DocumentChunker's class docstring) may produce a final chunk that
+        modestly exceeds it. This is not a bug -- a chunk_size violation here
+        is the documented, correct behavior, verified explicitly rather than
+        left as an implicit side effect."""
+        chunker = DocumentChunker(chunk_size=100, chunk_overlap=0)
+        text = ("word " * 20).strip() + "\n\n" + "x"
+        doc = _make_doc(text)
+        chunks = chunker.chunk_document(doc)
+        assert len(chunks[-1].content) > chunker.chunk_size
+        # Every non-final chunk still respects the normal chunk_size target.
+        for c in chunks[:-1]:
+            assert len(c.content) <= chunker.chunk_size
+
     def test_no_merge_when_only_one_chunk(self):
         chunker = DocumentChunker(chunk_size=500, chunk_overlap=0)
         doc = _make_doc("A single short document.")

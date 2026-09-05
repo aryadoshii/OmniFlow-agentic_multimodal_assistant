@@ -76,13 +76,97 @@ class TestAddTexts:
         assert exc_info.value.error_code == "RAG_RETRIEVAL_ERROR"
         assert store.count() == 0  # index must remain untouched on failure
 
-    def test_add_texts_without_embeddings_stores_but_does_not_index(self):
-        """Text/metadata can be stored without vectors; count() stays 0 since
-        nothing was actually added to the FAISS index itself."""
+    def test_add_texts_without_embeddings_rejected(self):
+        """Embeddings are now required for any non-empty texts list: an
+        un-embedded entry could never be found by search() anyway, and
+        previously allowing it caused this store's metadata ids to silently
+        drift out of alignment with FAISS's own vector ids (see the FAISS
+        ID/metadata alignment regression test below)."""
         store = FAISSVectorStore(dimension=4)
-        ids = store.add_texts(["a", "b"])
-        assert ids == ["0", "1"]
+        with pytest.raises(InvalidInputError) as exc_info:
+            store.add_texts(["a", "b"])
+        assert exc_info.value.status_code == 400
         assert store.count() == 0
+        assert len(store._store) == 0
+
+    def test_add_texts_with_embeddings_still_works_normally(self):
+        """Regression guard: the embeddings-required fix must not break the
+        ordinary, already-supported embedded insertion path."""
+        store = FAISSVectorStore(dimension=4)
+        vecs = np.eye(4, dtype=np.float32)[:2]
+        ids = store.add_texts(["a", "b"], [{"k": "a"}, {"k": "b"}], embeddings=vecs)
+        assert ids == ["0", "1"]
+        assert store.count() == 2
+        assert store._store[0]["text"] == "a"
+        assert store._store[1]["text"] == "b"
+
+
+class TestFaissMetadataAlignment:
+    """Regression coverage for the FAISS-id / metadata-id desync bug.
+
+    Before the fix, ``start_id`` was derived from ``len(self._store)``,
+    which could include entries added via the (now-removed) no-embeddings
+    path. If an unembedded entry were ever stored, a later embedded entry's
+    metadata id would be assigned one-past the unembedded entry, while FAISS
+    itself would assign that vector internal id 0 (since nothing had
+    actually been added to the index yet) -- so a search returning FAISS id
+    0 would resolve to the WRONG (earlier, unrelated) metadata entry.
+
+    Embeddings are now mandatory, so the only way to exercise this class of
+    bug is to simulate the old drift directly against the store's internal
+    state and confirm the current implementation's id derivation
+    (``self._index.ntotal``, not ``len(self._store)``) is immune to it.
+    """
+
+    def test_search_maps_to_correct_metadata_after_simulated_pre_existing_drift(self):
+        store = FAISSVectorStore(dimension=4)
+
+        # Simulate a pre-existing metadata-store entry that was never indexed
+        # into FAISS (the exact state the old no-embeddings path could leave
+        # behind). This directly reproduces the bug's precondition:
+        # len(self._store) > self._index.ntotal.
+        store._store[0] = {"text": "UNRELATED stale entry", "metadata": {"doc": "stale"}}
+        assert len(store._store) == 1
+        assert store.count() == 0  # FAISS itself still has zero vectors
+
+        # Now add a real, embedded entry the normal way.
+        vec_b = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        ids = store.add_texts(["document B"], [{"doc": "B"}], embeddings=vec_b)
+
+        # With the fix, start_id comes from self._index.ntotal (0 at the time
+        # of this call), NOT len(self._store) (which was already 1). So
+        # "document B" must be assigned FAISS id 0 -- overwriting the stale
+        # simulated entry at that key with its OWN correct metadata -- not id 1.
+        assert ids == ["0"]
+        assert store._store[0]["text"] == "document B"
+        assert store._store[0]["metadata"]["doc"] == "B"
+
+        # A search for document B's own vector must resolve to document B's
+        # metadata, never the stale/unrelated entry.
+        results = store.search(vec_b, top_k=1)
+        assert len(results) == 1
+        assert results[0]["text"] == "document B"
+        assert results[0]["metadata"]["doc"] == "B"
+        assert results[0]["metadata"]["doc"] != "stale"
+
+    def test_sequential_embedded_adds_never_desync(self):
+        """Multiple normal, embedded add_texts() calls must keep FAISS ids
+        and metadata ids in lockstep across calls."""
+        store = FAISSVectorStore(dimension=4)
+        vec_a = np.array([[1.0, 0.0, 0.0, 0.0]], dtype=np.float32)
+        vec_b = np.array([[0.0, 1.0, 0.0, 0.0]], dtype=np.float32)
+
+        ids_a = store.add_texts(["document A"], [{"doc": "A"}], embeddings=vec_a)
+        ids_b = store.add_texts(["document B"], [{"doc": "B"}], embeddings=vec_b)
+
+        assert ids_a == ["0"]
+        assert ids_b == ["1"]
+        assert store.count() == len(store._store) == 2
+
+        result_a = store.search(vec_a, top_k=1)
+        result_b = store.search(vec_b, top_k=1)
+        assert result_a[0]["metadata"]["doc"] == "A"
+        assert result_b[0]["metadata"]["doc"] == "B"
 
 
 class TestSearch:

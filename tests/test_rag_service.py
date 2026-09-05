@@ -275,6 +275,59 @@ class TestEmptyQuery:
             service.retrieve("   ")
 
 
+class TestDirectServiceLevelValidation:
+    """Regression coverage: RAGService.retrieve() must validate its own
+    parameters when called directly, not only when invoked through the
+    ToolRegistry/RAGSearchInput Pydantic boundary."""
+
+    def test_zero_top_k_raises_invalid_input_error(self) -> None:
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        with pytest.raises(InvalidInputError) as exc_info:
+            service.retrieve("apple pie recipe", top_k=0)
+        assert exc_info.value.status_code == 400
+
+    def test_negative_top_k_raises_invalid_input_error(self) -> None:
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        with pytest.raises(InvalidInputError):
+            service.retrieve("apple pie recipe", top_k=-1)
+
+    def test_non_integer_top_k_raises_invalid_input_error(self) -> None:
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        with pytest.raises(InvalidInputError):
+            service.retrieve("apple pie recipe", top_k=2.5)  # type: ignore[arg-type]
+
+    def test_negative_score_threshold_raises_invalid_input_error(self) -> None:
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        with pytest.raises(InvalidInputError) as exc_info:
+            service.retrieve("apple pie recipe", score_threshold=-0.1)
+        assert exc_info.value.status_code == 400
+
+    def test_score_threshold_above_one_raises_invalid_input_error(self) -> None:
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        with pytest.raises(InvalidInputError):
+            service.retrieve("apple pie recipe", score_threshold=1.1)
+
+    def test_boundary_threshold_values_are_accepted(self) -> None:
+        """0.0 and 1.0 are valid (inclusive) boundary values, not rejected."""
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        service.retrieve("apple pie recipe", score_threshold=0.0)
+        service.retrieve("apple pie recipe", score_threshold=1.0)
+
+    def test_valid_direct_call_still_works(self) -> None:
+        """Regression guard: legitimate direct calls (bypassing the tool
+        registry entirely) must be unaffected by the new validation."""
+        service = _standard_service()
+        service.index_documents([_doc(RECIPE_TEXT)])
+        result = service.retrieve("apple pie recipe", top_k=2, score_threshold=0.5)
+        assert result.has_evidence is True
+
+
 # ---------------------------------------------------------------------------
 # Metadata / source attribution
 # ---------------------------------------------------------------------------
@@ -295,7 +348,11 @@ class TestSourceAttribution:
             ]
         )
 
-        result = service.retrieve("space travel and astronomy", score_threshold=-1.0)
+        # score_threshold=0.0 (the valid minimum) is used here purely to
+        # disable relevance filtering for this metadata-preservation check;
+        # -1.0 was previously used for this but is no longer a valid
+        # score_threshold per the new service-level validation.
+        result = service.retrieve("space travel and astronomy", score_threshold=0.0)
 
         chunk = result.results[0]
         assert chunk.filename == "manual.pdf"

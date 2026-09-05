@@ -16,7 +16,12 @@ class BaseVectorStore(ABC):
         metadatas: list[dict[str, Any]] | None = None,
         embeddings: np.ndarray | None = None,
     ) -> list[str]:
-        """Indexes text chunks with optional metadata and pre-computed embeddings."""
+        """Indexes text chunks with optional metadata and pre-computed embeddings.
+
+        Concrete implementations may require ``embeddings`` for any non-empty
+        ``texts`` (see FAISSVectorStore) since a store whose purpose is
+        vector search cannot meaningfully index un-embedded text.
+        """
         pass
 
     @abstractmethod

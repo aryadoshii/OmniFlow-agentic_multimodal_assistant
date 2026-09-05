@@ -60,24 +60,33 @@ class FAISSVectorStore(BaseVectorStore):
         metadatas: list[dict[str, Any]] | None = None,
         embeddings: np.ndarray | None = None,
     ) -> list[str]:
-        """Indexes text strings with optional metadata and pre-computed embeddings.
+        """Indexes text strings with metadata and pre-computed embeddings.
+
+        Embeddings are required for any non-empty ``texts`` list: this store's
+        sole purpose is FAISS-backed semantic search, so an entry stored
+        without a corresponding vector could never be found by ``search()``
+        anyway -- and previously, allowing it caused this store's internal
+        metadata ids to silently drift out of alignment with FAISS's own
+        vector ids (a later embedded entry could end up mapped to an earlier,
+        unrelated entry's metadata). Requiring embeddings removes that failure
+        mode at the source rather than papering over it.
 
         Args:
             texts: Plain-text strings to index.
             metadatas: Optional per-text metadata dicts. Defaults to empty dicts.
                        If provided, must have exactly one entry per text.
-            embeddings: Optional pre-computed (N, dimension) float32 array. If
-                        None, texts are stored but NOT embedded -- callers are
-                        expected to always supply vectors in normal use.
+            embeddings: Pre-computed (N, dimension) float32 array. Required
+                        whenever ``texts`` is non-empty.
 
         Returns:
             List of string IDs (matching FAISS 0-based integer IDs cast to str).
 
         Raises:
-            InvalidInputError: If metadatas is provided with a length that does
-                                not match texts, if a metadata entry is not a
-                                dict, or if the embeddings row count does not
-                                match the number of texts.
+            InvalidInputError: If embeddings are omitted for a non-empty texts
+                                list, if metadatas is provided with a length
+                                that does not match texts, if a metadata entry
+                                is not a dict, or if the embeddings row count
+                                does not match the number of texts.
             RAGRetrievalError: If the embeddings' dimensionality does not match
                                 this store's configured dimension, or if FAISS
                                 indexing otherwise fails.
@@ -86,6 +95,15 @@ class FAISSVectorStore(BaseVectorStore):
             return []
 
         n = len(texts)
+
+        if embeddings is None:
+            raise InvalidInputError(
+                "embeddings are required to add texts to FAISSVectorStore: "
+                "an un-embedded entry could never be found by search(), and "
+                "storing one without a matching vector would misalign this "
+                "store's metadata ids with FAISS's own vector ids.",
+                details={"texts_count": str(n)},
+            )
 
         if metadatas is not None:
             if len(metadatas) != n:
@@ -102,35 +120,38 @@ class FAISSVectorStore(BaseVectorStore):
         else:
             metadatas = [{} for _ in range(n)]
 
-        if embeddings is not None:
-            vecs = np.asarray(embeddings, dtype=np.float32)
-            if vecs.ndim == 1:
-                vecs = vecs.reshape(1, -1)
+        vecs = np.asarray(embeddings, dtype=np.float32)
+        if vecs.ndim == 1:
+            vecs = vecs.reshape(1, -1)
 
-            if vecs.shape[0] != n:
-                raise InvalidInputError(
-                    f"embeddings row count ({vecs.shape[0]}) must match texts length ({n}).",
-                    details={"texts_count": str(n), "embeddings_rows": str(vecs.shape[0])},
-                )
-            if vecs.shape[1] != self._dimension:
-                raise RAGRetrievalError(
-                    f"Embedding dimension ({vecs.shape[1]}) does not match "
-                    f"this store's configured dimension ({self._dimension}).",
-                    details={
-                        "expected_dimension": str(self._dimension),
-                        "actual_dimension": str(vecs.shape[1]),
-                    },
-                )
+        if vecs.shape[0] != n:
+            raise InvalidInputError(
+                f"embeddings row count ({vecs.shape[0]}) must match texts length ({n}).",
+                details={"texts_count": str(n), "embeddings_rows": str(vecs.shape[0])},
+            )
+        if vecs.shape[1] != self._dimension:
+            raise RAGRetrievalError(
+                f"Embedding dimension ({vecs.shape[1]}) does not match "
+                f"this store's configured dimension ({self._dimension}).",
+                details={
+                    "expected_dimension": str(self._dimension),
+                    "actual_dimension": str(vecs.shape[1]),
+                },
+            )
 
-            try:
-                self._index.add(vecs)
-            except Exception as exc:
-                raise RAGRetrievalError(
-                    f"FAISS indexing failed: {type(exc).__name__}.",
-                    details={"error_type": type(exc).__name__},
-                ) from exc
+        # Capture FAISS's own next-id counter BEFORE adding, so this store's
+        # metadata ids can never drift from the ids FAISS actually assigns --
+        # the two collections now grow strictly in lockstep.
+        start_id = self._index.ntotal
 
-        start_id = len(self._store)
+        try:
+            self._index.add(vecs)
+        except Exception as exc:
+            raise RAGRetrievalError(
+                f"FAISS indexing failed: {type(exc).__name__}.",
+                details={"error_type": type(exc).__name__},
+            ) from exc
+
         ids: list[str] = []
         for i, (text, meta) in enumerate(zip(texts, metadatas)):
             faiss_id = start_id + i

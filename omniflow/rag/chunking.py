@@ -49,6 +49,16 @@ class DocumentChunker:
         3. Sentence boundaries (``". "``)
         4. Whitespace (`` ``)
         5. Hard character split (no delimiter)
+
+    ``chunk_size`` is the normal target/maximum chunk length in characters,
+    with one deliberate exception: if the final chunk produced for a document
+    would be a pathologically small trailing fragment (shorter than
+    ``_MIN_CHUNK_RATIO`` of ``chunk_size``), it is merged into the preceding
+    chunk instead of being left as its own, near-useless standalone chunk
+    (see ``_merge_pathological_tail``). That merged chunk may therefore
+    modestly exceed ``chunk_size``. This is intentional trailing-fragment
+    handling, not a bug -- ``chunk_size`` is not a hard, universally-enforced
+    maximum.
     """
 
     _DELIMITERS = ["\n\n", "\n", ". ", " ", ""]
