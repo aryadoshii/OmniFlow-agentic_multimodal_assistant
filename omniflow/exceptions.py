@@ -82,6 +82,32 @@ class TranscriptionError(ProcessingFailureError):
         self.error_code = "TRANSCRIPTION_ERROR"
 
 
+class EmbeddingGenerationError(ProcessingFailureError):
+    """Raised when the local embedding backend is unavailable or encoding fails."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message=message, details=details)
+        self.error_code = "EMBEDDING_GENERATION_ERROR"
+
+
+class TranscriptUnavailableError(ProcessingFailureError):
+    """Raised when a video/source is valid but no transcript could be retrieved for it.
+
+    Distinct from ExternalProviderError: this means the provider was reachable
+    and answered, but the requested content has no transcript (disabled,
+    missing, unplayable, age-restricted, or the requested translation
+    language is unavailable) -- not a network/provider outage.
+    """
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message=message, details=details)
+        self.error_code = "TRANSCRIPT_UNAVAILABLE"
+
+
 class UploadValidationError(InvalidInputError):
     """Raised when an uploaded file fails validation checks (size, extension, empty)."""
 
@@ -132,3 +158,55 @@ class ConfigurationError(OmniFlowException):
             status_code=500,
             details=details,
         )
+
+
+class ToolExecutionError(OmniFlowException):
+    """Raised when a deterministic tool fails to execute or returns an invalid result."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="TOOL_EXECUTION_ERROR",
+            status_code=500,
+            details=details,
+        )
+
+
+class ToolNotFoundError(OmniFlowException):
+    """Raised when a requested tool name is not present in the tool registry."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="TOOL_NOT_FOUND",
+            status_code=404,
+            details=details,
+        )
+
+
+class ToolAlreadyRegisteredError(OmniFlowException):
+    """Raised when attempting to register a tool name that is already registered."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="TOOL_ALREADY_REGISTERED",
+            status_code=500,
+            details=details,
+        )
+
+
+class RAGRetrievalError(ProcessingFailureError):
+    """Raised when vector store indexing or semantic retrieval fails."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(message=message, details=details)
+        self.error_code = "RAG_RETRIEVAL_ERROR"

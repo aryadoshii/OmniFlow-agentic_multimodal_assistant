@@ -2,8 +2,8 @@
 
 OmniFlow is an agentic multimodal assistant engineered for intelligent ingestion, autonomous planning, deterministic tool execution, conditional RAG, and multi-input synthesis.
 
-> **Current Status: Phase 2 Implemented (Multimodal Ingestion Layer)**  
-> This repository currently contains the Phase 1 architectural foundation and Phase 2 multimodal ingestion layer. Downstream agent tools (YouTube transcripts, FAISS RAG), LangGraph orchestration, LLM reasoning, and UI components are scheduled for subsequent phases.
+> **Current Status: Phase 3 Implemented (Deterministic Tool + RAG Layer)**  
+> This repository contains the Phase 1 architectural foundation, Phase 2 multimodal ingestion layer, and Phase 3 deterministic Tool Framework + RAG pipeline (chunking, local embeddings, FAISS retrieval, YouTube transcripts). LangGraph orchestration, LLM reasoning/synthesis, and UI components are scheduled for subsequent phases.
 
 ---
 
@@ -12,13 +12,12 @@ OmniFlow is an agentic multimodal assistant engineered for intelligent ingestion
 ### Implemented
 - **Phase 1: Architecture & Foundation**: Modular FastAPI structure, domain models (`NormalizedDocument`, `AgentState`), centralized configuration, exception hierarchy, error handlers, and logging.
 - **Phase 2: Multimodal Ingestion Layer**: Deterministic processors converting plain text, PDFs (native text with per-page OCR fallback), images (JPG/PNG via Tesseract OCR), and audio (WAV/MP3/M4A via faster-whisper) into unified `NormalizedDocument` representations.
+- **Phase 3: Deterministic Tool + RAG Layer**: A structured-I/O tool abstraction and registry (`BaseTool`, `ToolRegistry`); a YouTube transcript retrieval tool (no API key required); a local, lazy-loaded embedding service (`sentence-transformers/all-MiniLM-L6-v2`); deterministic document chunking with source/metadata preservation; an in-memory FAISS vector store; a `RAGService` that turns ingested documents into ranked, source-attributed evidence (or an explicit "insufficient evidence" result — never a hallucinated answer); and a `RAGSearchTool` exposing that pipeline through the same tool registry as YouTube retrieval. See [Phase 3: Tool + RAG Architecture](#phase-3-tool--rag-architecture) below.
 
-### Not Yet Implemented (Scheduled for Phases 3-5)
-- YouTube URL detection & transcript retrieval
-- FAISS local vector retrieval & conditional RAG
-- LangGraph orchestration, state machine & planner
+### Not Yet Implemented (Scheduled for Phase 4+)
+- LangGraph orchestration, state machine & planner (deciding *when* to call which tool)
 - Ambiguity clarification flow
-- Gemini LLM reasoning & synthesis
+- Gemini LLM reasoning & synthesis (Phase 3's RAG output is evidence, not an answer)
 - Frontend web UI
 - Docker containerization & cloud deployment
 
@@ -60,6 +59,35 @@ TextProcessor   PDFProcessor    ImageProcessor  AudioProcessor
 - **PDF Native/OCR Hybrid Fallback**: Every page is analyzed natively with PyMuPDF. If a page has meaningful text (>= threshold), native text is used. If a page is scanned or empty, PyMuPDF renders the page to an image and runs Tesseract OCR. Mixed PDFs are accurately labeled `ExtractionMethod.MIXED`.
 - **Lazy & Optional Speech-to-Text**: `faster-whisper` is loaded purely on demand when an audio file is processed. The app starts and handles text/PDF/images with zero Whisper overhead. Model size (`tiny` by default) and compute type (`int8`) are fully configurable for CPU/free-tier constraints.
 - **Safe Ephemeral Storage**: Uploads are processed in system temporary files outside the repository tree, guaranteeing cleanup upon completion or failure.
+
+---
+
+## Phase 3: Tool + RAG Architecture
+
+```
+ToolRegistry
+    ├── youtube_transcript  ──► YouTubeTranscriptTool ──► youtube-transcript-api (no API key)
+    └── rag_search          ──► RAGSearchTool ──► RAGService
+                                                       │
+                              NormalizedDocument ──► DocumentChunker ──► DocumentChunk(s)
+                                                       │
+                                                  EmbeddingService (local, lazy-loaded)
+                                                       │
+                                              FAISSVectorStore (in-memory, IndexFlatIP)
+                                                       │
+                                        RAGResult (ranked evidence, or explicit "no evidence")
+```
+
+**Design principles:**
+- **Structured I/O everywhere**: every tool declares a Pydantic `input_model` and returns a Pydantic output — never a raw dict. `ToolRegistry.execute()` validates input and enforces structured output before returning `(result, ToolExecutionTrace)`.
+- **Evidence, not answers**: `RAGService.retrieve()` and `RAGSearchTool` never call an LLM and never generate an answer. If nothing indexed clears the similarity threshold, the result explicitly reports `has_evidence=False` / `status="no_evidence"` with a human-readable reason — a deliberate refusal to hand a future LLM synthesis step irrelevant context, rather than a silent empty list.
+- **Local, keyless, and lazy**: embeddings run locally via `sentence-transformers/all-MiniLM-L6-v2` (~80MB, CPU-friendly, no API key); the model is not imported or loaded until the first embedding call. YouTube transcripts are fetched via the free `youtube-transcript-api` library — no paid API, no official YouTube Data API key.
+- **Full source attribution**: every retrieved chunk carries its originating `document_id`, `filename`, `source_type`, `extraction_method`, chunk position, and any page/segment metadata the ingestion layer already produced (e.g. a PDF's per-page breakdown) — traceable all the way back to the original upload.
+- **No orchestration logic yet, by design**: `ToolRegistry` and `RAGService` are a deterministic *execution substrate* — they don't decide *when* to call `rag_search` vs. `youtube_transcript`, or chain tools together. That decision logic is explicitly Phase 4's job (LangGraph); Phase 3 only guarantees that once a tool is called, it behaves safely, predictably, and with clear, typed error reporting.
+
+**Configuration** (`.env` / `omniflow/config.py`): `EMBEDDING_MODEL_NAME`, `EMBEDDING_DEVICE`, `EMBEDDING_BATCH_SIZE`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_TOP_K`, `RAG_SIMILARITY_THRESHOLD`, `YOUTUBE_TRANSCRIPT_MAX_CHARS` — see `.env.example` for defaults.
+
+**Not yet wired to any HTTP route.** `ToolRegistry`, `RAGService`, and `RAGSearchTool` are fully implemented, tested, and usable programmatically, but no FastAPI endpoint currently exposes them (only `POST /ingest` exists as a live route) — that wiring is expected to arrive alongside Phase 4's orchestration layer.
 
 ---
 
@@ -109,7 +137,7 @@ Create your `.env` file:
 cp .env.example .env
 ```
 
-Available Phase 2 settings:
+Key settings (see `.env.example` for the complete, commented list):
 ```env
 APP_ENV=development
 LOG_LEVEL=INFO
@@ -126,6 +154,20 @@ PDF_NATIVE_TEXT_CHAR_THRESHOLD=30
 WHISPER_MODEL_SIZE=tiny
 WHISPER_DEVICE=cpu
 WHISPER_COMPUTE_TYPE=int8
+
+# Phase 3: Embedding Configuration (local, no API key)
+EMBEDDING_MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
+EMBEDDING_DEVICE=cpu
+EMBEDDING_BATCH_SIZE=32
+
+# Phase 3: RAG Chunking / Retrieval Configuration
+RAG_CHUNK_SIZE=500
+RAG_CHUNK_OVERLAP=50
+RAG_TOP_K=4
+RAG_SIMILARITY_THRESHOLD=0.2
+
+# Phase 3: YouTube Transcript Tool Configuration
+YOUTUBE_TRANSCRIPT_MAX_CHARS=200000
 ```
 
 ### 5. Run the Application
@@ -153,8 +195,53 @@ curl -X POST http://127.0.0.1:8000/ingest \
   -F "files=@receipt.png"
 ```
 
-### 7. Run the Test Suite
+### 7. Phase 3 Tool + RAG Usage Example (programmatic, no HTTP route yet)
+
+```python
+from omniflow.rag.service import RAGService
+from omniflow.tools.registry import ToolRegistry
+from omniflow.tools.rag_search import RAGSearchTool
+from omniflow.tools.youtube import YouTubeTranscriptTool
+from omniflow.models.document import NormalizedDocument, SourceType, ExtractionMethod
+
+rag_service = RAGService()
+registry = ToolRegistry()
+registry.register(YouTubeTranscriptTool())
+registry.register(RAGSearchTool(rag_service))
+
+doc = NormalizedDocument(
+    filename="notes.txt",
+    source_type=SourceType.TEXT,
+    mime_type="text/plain",
+    content="OmniFlow's RAG pipeline chunks, embeds, and indexes documents locally.",
+    extraction_method=ExtractionMethod.DIRECT_INPUT,
+)
+rag_service.index_documents([doc])
+
+output, trace = registry.execute("rag_search", query="How does the RAG pipeline work?")
+print(output.status)     # "evidence_found" or "no_evidence" -- never a generated answer
+print(output.evidence)   # ranked, source-attributed RetrievedChunk list
+```
+
+### 8. Run the Test Suite
 
 ```bash
 pytest -v
 ```
+
+The default suite (214 tests as of Phase 3) is fully mocked at the true external boundary (the embedding model, the YouTube API) and runs in well under a second with no network access or model downloads. Two additional tests exercise the **real** embedding model end-to-end and are skipped by default; run them explicitly once the model has been downloaded (first run only) via:
+
+```bash
+OMNIFLOW_RUN_MODEL_INTEGRATION_TESTS=1 pytest -k RealModel -v
+```
+
+---
+
+## Phase 3 Known Limitations
+
+- **Not yet wired to any HTTP route or orchestrator.** `RAGService` and both tools are fully functional and tested as standalone components, but nothing currently calls them from `/ingest` or any other endpoint — that integration is Phase 4's job.
+- **`faiss-cpu` and `sentence-transformers` (torch) can conflict if `faiss` is imported first in the same process**, due to a third-party OpenMP runtime conflict (observed on macOS; not an OmniFlow bug). Import `torch` (or `sentence_transformers`) before `faiss` anywhere both are used together — this repository's own code already does so correctly via lazy, on-demand imports inside each service.
+- **No metadata-based filtering in retrieval yet** (e.g. restricting a search to one document or source type) — every query searches the full index.
+- **No persistence.** The FAISS index and chunk metadata are in-memory only and are lost on process restart, by design for this phase.
+- **The default similarity threshold (0.2) is a conservative, principled default, not an empirically tuned one** — no labeled relevance dataset or downstream answer-quality signal exists yet to validate it against.
+- YouTube transcript retrieval has been verified against a mocked provider boundary in all automated tests; this README does not claim live network retrieval from youtube.com has been exercised in this environment.

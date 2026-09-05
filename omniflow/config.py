@@ -86,6 +86,59 @@ class Settings(BaseSettings):
         description="Quantization/compute type for faster-whisper (int8, float32, float16).",
     )
 
+    # Embedding Configuration (Phase 3)
+    embedding_model_name: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        alias="EMBEDDING_MODEL_NAME",
+        description="Sentence-transformers model for local CPU embeddings.",
+    )
+    embedding_device: str = Field(
+        default="cpu",
+        alias="EMBEDDING_DEVICE",
+        description="Device for embedding inference (cpu or cuda).",
+    )
+    embedding_batch_size: int = Field(
+        default=32,
+        alias="EMBEDDING_BATCH_SIZE",
+        ge=1,
+        description="Batch size used when encoding multiple texts in a single embedding call.",
+    )
+
+    # YouTube Transcript Tool Configuration (Phase 3.2)
+    youtube_transcript_max_chars: int = Field(
+        default=200_000,
+        alias="YOUTUBE_TRANSCRIPT_MAX_CHARS",
+        ge=1000,
+        description="Maximum characters retained from a single YouTube transcript, to bound memory usage on very long videos.",
+    )
+
+    # RAG Chunking and Retrieval Configuration (Phase 3)
+    rag_chunk_size: int = Field(
+        default=500,
+        alias="RAG_CHUNK_SIZE",
+        ge=50,
+        description="Target character count per document chunk.",
+    )
+    rag_chunk_overlap: int = Field(
+        default=50,
+        alias="RAG_CHUNK_OVERLAP",
+        ge=0,
+        description="Character overlap between adjacent chunks.",
+    )
+    rag_top_k: int = Field(
+        default=4,
+        alias="RAG_TOP_K",
+        ge=1,
+        description="Number of top similar chunks returned per retrieval query.",
+    )
+    rag_similarity_threshold: float = Field(
+        default=0.2,
+        alias="RAG_SIMILARITY_THRESHOLD",
+        ge=0.0,
+        le=1.0,
+        description="Minimum cosine similarity score required for a chunk to be returned.",
+    )
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

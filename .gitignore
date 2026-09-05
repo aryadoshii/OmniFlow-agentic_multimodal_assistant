@@ -50,6 +50,7 @@ secrets/
 
 # Testing & coverage
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 .tox/
@@ -63,3 +64,17 @@ logs/
 uploads/
 temp/
 scratch/
+
+# Local ML model weights / caches (sentence-transformers, HuggingFace, torch)
+# These are downloaded on demand at runtime and must never be committed.
+.cache/
+.sentence_transformers_cache/
+.hf_cache/
+hf_cache/
+models/
+model_cache/
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
