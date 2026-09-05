@@ -18,10 +18,21 @@ from omniflow.exceptions import (
     ToolAlreadyRegisteredError,
     ToolNotFoundError,
 )
+from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
 from omniflow.rag.service import RAGResult, RetrievedChunk
 from omniflow.tools.rag_search import RAGSearchInput, RAGSearchOutput, RAGSearchTool
 from omniflow.tools.registry import ToolRegistry
 from omniflow.tools.youtube import YouTubeTranscriptTool
+
+
+def _make_document(content: str = "Some document content.") -> NormalizedDocument:
+    return NormalizedDocument(
+        filename="doc.txt",
+        source_type=SourceType.TEXT,
+        mime_type="text/plain",
+        content=content,
+        extraction_method=ExtractionMethod.DIRECT_INPUT,
+    )
 
 
 def _make_chunk(content: str = "Evidence text.", score: float = 0.9) -> RetrievedChunk:
@@ -147,6 +158,83 @@ class TestSuccessfulExecution:
         assert tool.input_model is RAGSearchInput
         assert "evidence" in tool.description.lower()
         assert "llm" in tool.description.lower()
+
+
+# ---------------------------------------------------------------------------
+# Lazy indexing (Phase 5 performance fix)
+# ---------------------------------------------------------------------------
+
+
+class TestLazyIndexing:
+    """RAGSearchTool must index its documents lazily, on its own first
+    run() call, at most once per instance -- never at construction time.
+    This is what lets a direct-context request avoid loading the embedding
+    backend (sentence-transformers/Torch) just because files were uploaded;
+    see omniflow/api/routes/agent.py's _build_tool_registry()."""
+
+    def _tool_with_no_evidence(self, documents: list[NormalizedDocument] | None) -> tuple[RAGSearchTool, MagicMock]:
+        rag_service = _mock_rag_service_returning(
+            RAGResult(query="q", results=[], has_evidence=False, top_k=4, score_threshold=0.2, message="none")
+        )
+        return RAGSearchTool(rag_service, documents), rag_service
+
+    def test_documents_not_indexed_at_construction(self) -> None:
+        rag_service = MagicMock()
+        RAGSearchTool(rag_service, [_make_document()])
+        rag_service.index_documents.assert_not_called()
+
+    def test_first_run_indexes_the_given_documents_before_retrieving(self) -> None:
+        docs = [_make_document("Quarterly revenue rose 15%.")]
+        tool, rag_service = self._tool_with_no_evidence(docs)
+
+        tool.run(RAGSearchInput(query="revenue"))
+
+        rag_service.index_documents.assert_called_once_with(docs)
+        call_order = [c[0] for c in rag_service.method_calls]
+        assert call_order.index("index_documents") < call_order.index("retrieve")
+
+    def test_second_run_on_the_same_instance_does_not_reindex(self) -> None:
+        tool, rag_service = self._tool_with_no_evidence([_make_document()])
+
+        tool.run(RAGSearchInput(query="first question"))
+        tool.run(RAGSearchInput(query="second question"))
+
+        rag_service.index_documents.assert_called_once()
+        assert rag_service.retrieve.call_count == 2
+
+    def test_no_documents_provided_indexes_an_empty_list_not_none(self) -> None:
+        """Constructing without documents (the common case for a request
+        with no uploaded files, or existing callers that never pass any)
+        must still index an empty list -- a cheap, explicit no-op per
+        RAGService.index_documents()'s own contract -- never skip the call
+        or pass None."""
+        tool, rag_service = self._tool_with_no_evidence(None)
+
+        tool.run(RAGSearchInput(query="q"))
+
+        rag_service.index_documents.assert_called_once_with([])
+
+    def test_indexing_failure_propagates_and_a_later_retry_indexes_again(self) -> None:
+        """If indexing itself fails, the failure must propagate like any
+        other domain exception (never silently swallowed into a
+        no-evidence result), and must not be mistaken for 'already
+        indexed' -- a later retry attempt (e.g. a subsequent replan cycle
+        calling rag_search again) must try indexing again rather than
+        proceeding straight to retrieve() against an unindexed corpus."""
+        rag_service = MagicMock()
+        rag_service.index_documents.side_effect = [EmbeddingGenerationError("backend down"), None]
+        rag_service.retrieve.return_value = RAGResult(
+            query="q", results=[], has_evidence=False, top_k=4, score_threshold=0.2, message="none"
+        )
+        tool = RAGSearchTool(rag_service, [_make_document()])
+
+        with pytest.raises(EmbeddingGenerationError):
+            tool.run(RAGSearchInput(query="q"))
+        rag_service.retrieve.assert_not_called()
+
+        tool.run(RAGSearchInput(query="q"))  # retry succeeds
+        assert rag_service.index_documents.call_count == 2
+        rag_service.retrieve.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

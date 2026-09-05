@@ -18,6 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from omniflow.models.document import NormalizedDocument
 from omniflow.rag.service import RAGResult, RAGService, RetrievedChunk
 from omniflow.tools.base import BaseTool
 
@@ -83,14 +84,31 @@ class RAGSearchOutput(BaseModel):
 class RAGSearchTool(BaseTool):
     """Deterministic semantic search over previously indexed documents.
 
-    Thin, stateless wrapper around a caller-supplied RAGService instance --
-    this tool holds no index state itself and performs no chunking or
-    embedding on its own; it only validates input, delegates to
-    RAGService.retrieve(), and reshapes the result into structured output.
+    Thin wrapper around a caller-supplied RAGService instance -- this tool
+    performs no chunking or embedding logic of its own, only validates
+    input, delegates to RAGService.index_documents()/retrieve(), and
+    reshapes the result into structured output.
+
+    Indexing is LAZY: the documents passed at construction are stored but
+    NOT indexed until this tool's own first ``run()`` call, and at most
+    once per instance thereafter (an ``_indexed`` flag guards repeated
+    replan cycles from re-indexing the same documents). This matters
+    because indexing is what forces the embedding backend (sentence-
+    transformers/Torch) to load -- a request whose plan never selects
+    rag_search (a direct-context answer) must never pay that cost just
+    because files happened to be uploaded. See omniflow/api/routes/agent.py,
+    which constructs one RAGSearchTool per request with that request's
+    normalized_documents, whether or not the planner ends up using it.
     """
 
-    def __init__(self, rag_service: RAGService) -> None:
+    def __init__(
+        self,
+        rag_service: RAGService,
+        normalized_documents: list[NormalizedDocument] | None = None,
+    ) -> None:
         self._rag_service = rag_service
+        self._documents = list(normalized_documents) if normalized_documents else []
+        self._indexed = False
 
     @property
     def name(self) -> str:
@@ -111,7 +129,15 @@ class RAGSearchTool(BaseTool):
         return RAGSearchInput
 
     def run(self, tool_input: RAGSearchInput) -> RAGSearchOutput:
-        """Delegates to RAGService.retrieve() and reshapes the result.
+        """Indexes this tool's documents (once) then delegates to
+        RAGService.retrieve(), reshaping the result.
+
+        The first call indexes ``self._documents`` (an empty list is a
+        cheap, explicit no-op -- see RAGService.index_documents()'s own
+        docstring) before ever calling ``embed_query()``/``retrieve()``.
+        Every subsequent call on this same instance skips indexing
+        entirely, so a replanning loop that calls rag_search more than
+        once for one request indexes its documents exactly once.
 
         Raises:
             InvalidInputError: Propagated from RAGService/EmbeddingService if
@@ -119,9 +145,14 @@ class RAGSearchTool(BaseTool):
                                 depth -- RAGSearchInput's own validator
                                 already rejects this at construction time).
             EmbeddingGenerationError: Propagated as-is if the embedding
-                                      backend is unavailable or fails.
-            RAGRetrievalError: Propagated as-is if FAISS search fails.
+                                      backend is unavailable or fails
+                                      (indexing or query embedding).
+            RAGRetrievalError: Propagated as-is if FAISS indexing or search fails.
         """
+        if not self._indexed:
+            self._rag_service.index_documents(self._documents)
+            self._indexed = True
+
         result: RAGResult = self._rag_service.retrieve(
             query=tool_input.query,
             top_k=tool_input.top_k,

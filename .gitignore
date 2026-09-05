@@ -78,3 +78,12 @@ model_cache/
 *.onnx
 *.pt
 *.pth
+
+# The Python `lib/`/`lib64/` rule above is unanchored, so it also matches
+# frontend/src/lib/ -- a real, required TypeScript source directory (API
+# error/trace/id helpers imported by several components), not a Python
+# venv's lib/. Un-ignore it and its contents explicitly; the directory
+# itself must be negated in addition to its contents, or git will never
+# descend into it to apply the second rule.
+!frontend/src/lib/
+!frontend/src/lib/**

@@ -324,6 +324,56 @@ class TestGraphExecution:
         assert result.status == WorkflowStatus.COMPLETED
         assert result.errors == []
 
+    def test_direct_answer_plan_with_null_tool_step_reaches_synthesis_without_replanning(self) -> None:
+        """Regression test for a real bug: a legitimate direct-answer plan
+        (planner.py's own documented case -- "'Summarize this PDF' with
+        full content already available -> ... a single direct-synthesis
+        step suffices" -- using tool_name=None) must reach synthesis after
+        ONE plan/execute/observe cycle, not loop back into replanning
+        merely because the plan list is technically non-empty (a single
+        PlanStep, not zero).
+
+        Configures a bare (non-list) Plan value, so the SAME null-tool plan
+        would be returned again on every call if the graph ever replanned:
+        if the bug were still present, this would loop until
+        max_agent_steps and FAIL, never reaching synthesis. Also confirms
+        no tool was ever invoked -- this is a direct-answer path, not a
+        tool-execution one."""
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _fake_intent_result(intent=IntentType.SUMMARIZATION),
+                Plan: Plan(
+                    steps=[_step(0, tool_name=None, purpose="Summarize the already-ingested PDF content.")]
+                ),
+            }
+        )
+        graph = build_graph(ToolRegistry(), llm_provider=provider)
+        result = run_graph(AgentState(original_request="Summarize this PDF."), compiled_graph=graph)
+
+        assert result.status == WorkflowStatus.COMPLETED
+        assert result.errors == []
+        step_names = [t.step_name for t in result.execution_trace]
+        assert step_names.count("node:plan") == 1
+        assert step_names.count("node:synthesize") == 1
+        assert not any(name.startswith("tool:") for name in step_names)
+
+    def test_multi_tool_plan_still_replans_as_before(self) -> None:
+        """Confirms the fix is narrowly scoped: a plan whose steps use real
+        tools continues to replan after every cycle exactly as before."""
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _fake_intent_result(),
+                Plan: [Plan(steps=[_step(0, tool_name="echo")]), Plan(steps=[])],
+            }
+        )
+        graph = build_graph(_registry_with_echo(), llm_provider=provider)
+        result = run_graph(AgentState(original_request="echo something"), compiled_graph=graph)
+
+        assert result.status == WorkflowStatus.COMPLETED
+        step_names = [t.step_name for t in result.execution_trace]
+        assert step_names.count("node:plan") == 2
+        assert step_names.count("tool:echo") == 1
+
     def test_clarification_needed_routes_to_clarification_and_stops(self) -> None:
         graph = build_graph()
         result = run_graph(AgentState(clarification_needed=True), compiled_graph=graph)
@@ -429,17 +479,35 @@ class TestRoutingFunctions:
         state = AgentState(plan=Plan(steps=[_step(0), _step(1)]), current_step=0)
         assert route_after_route_next(state) == "plan"
 
-    def test_route_after_route_next_ignores_step_position_uses_plan_emptiness(self) -> None:
+    def test_route_after_route_next_replans_regardless_of_position_for_a_real_tool_step(self) -> None:
         """Phase 4.5 replans after every single execute/observe cycle, so
-        this routing decision is driven entirely by whether the plan just
-        executed had any steps -- never by current_step's position (see
-        routing.py's docstring)."""
-        non_empty_plan = Plan(steps=[_step(0), _step(1)])
-        assert route_after_route_next(AgentState(plan=non_empty_plan, current_step=0)) == "plan"
+        this routing decision is driven by the step just executed, never by
+        current_step's raw position -- a plan whose just-executed step used
+        a real tool always triggers a replan, whatever that position is."""
+        non_empty_plan = Plan(steps=[_step(0, tool_name="echo"), _step(1, tool_name="echo")])
+        assert route_after_route_next(AgentState(plan=non_empty_plan, current_step=1)) == "plan"
         assert route_after_route_next(AgentState(plan=non_empty_plan, current_step=2)) == "plan"
 
         empty_plan = Plan(steps=[])
         assert route_after_route_next(AgentState(plan=empty_plan, current_step=0)) == "synthesize"
+
+    def test_route_after_route_next_goes_to_synthesize_after_a_null_tool_step(self) -> None:
+        """Regression test: a plan whose just-executed step has
+        tool_name=None (planner.py's documented direct-answer case, e.g.
+        "Summarize this PDF" needing no tool) is a no-op for execute_tool --
+        it never updates tool_call_history/tool_results, so replanning would
+        hand the planner an unchanged execution history and risk looping
+        until max_agent_steps is exhausted instead of reaching synthesis."""
+        plan = Plan(steps=[_step(0, tool_name=None)])
+        state = AgentState(plan=plan, current_step=1)  # observe_result already advanced past index 0
+        assert route_after_route_next(state) == "synthesize"
+
+    def test_route_after_route_next_replans_when_a_later_step_is_a_real_tool(self) -> None:
+        """A null-tool step at an EARLIER position must not suppress a
+        replan triggered by a real-tool step at the position just executed."""
+        plan = Plan(steps=[_step(0, tool_name=None), _step(1, tool_name="echo")])
+        state = AgentState(plan=plan, current_step=2)  # just executed index 1, a real tool
+        assert route_after_route_next(state) == "plan"
 
     def test_route_after_route_next_stops_immediately_on_prior_failure(self) -> None:
         """A FAILED status must short-circuit straight to synthesize, even if

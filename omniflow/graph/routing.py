@@ -37,7 +37,7 @@ def route_after_check_clarity(state: AgentState) -> CheckClarityRoute:
 def route_after_route_next(state: AgentState) -> RouteNextRoute:
     """Decides whether to replan (more work) or proceed to synthesis (complete).
 
-    Two purely mechanical checks, neither involving semantic reasoning about
+    Three purely mechanical checks, none involving semantic reasoning about
     WHAT to do next -- that reasoning happens inside the ``plan`` node's LLM
     call (omniflow.agents.planner), not here:
 
@@ -46,20 +46,38 @@ def route_after_route_next(state: AgentState) -> RouteNextRoute:
        max_tool_calls, max_retries -- was hit), stop the loop immediately
        and proceed to synthesize. No automatic retry beyond what
        execute_tool's own max_retries check already allows.
-    2. Otherwise: the plan that was just executed (``state.plan``) is
-       inspected, NOT re-derived from step position. Phase 4.5 replans after
-       every single execute_tool/observe_result cycle (see the ``plan``
-       node), so the planner's own output IS the "more work needed" signal:
-       a non-empty plan means at least one action was just taken and the
-       planner should be asked again (aware of the new result) whether more
-       is needed; an EMPTY plan means the planner already decided, on this
-       very call, that nothing further is required.
+    2. If the plan is missing or empty, the planner already decided, on
+       this very call, that nothing further is required.
+    3. Otherwise, look at the single step ``execute_tool`` just processed
+       (index ``current_step - 1`` -- ``observe_result`` already advanced
+       ``current_step`` past it). If that step's ``tool_name`` was None,
+       ``execute_tool`` performed a no-op: it never touched
+       ``tool_call_history``/``tool_results`` (see execute_tool's own
+       "no_tool_required" branch), so a replan now would hand the planner
+       an execution history IDENTICAL to before this cycle -- nothing new
+       happened for it to react to. Left unhandled, this makes a
+       legitimate direct-answer plan (planner.py's own documented
+       "'Summarize this PDF' ... use a single step with tool_name=null"
+       case) loop through replans that keep reproducing the same
+       null-tool step, silently burning the whole max_agent_steps budget
+       instead of reaching synthesis. A plan with a real tool_name at that
+       index (or any other case) still replans as before -- this is
+       narrowly scoped to the no-tool no-op, not a change to the general
+       "always ask the planner again" policy.
     """
     if state.status == WorkflowStatus.FAILED:
         return "synthesize"
 
-    plan_was_empty = state.plan is None or not state.plan.steps
-    return "synthesize" if plan_was_empty else "plan"
+    if state.plan is None or not state.plan.steps:
+        return "synthesize"
+
+    last_executed_index = state.current_step - 1
+    if 0 <= last_executed_index < len(state.plan.steps):
+        last_step = state.plan.steps[last_executed_index]
+        if last_step.tool_name is None:
+            return "synthesize"
+
+    return "plan"
 
 
 def route_after_validate_output(state: AgentState) -> ValidateOutputRoute:

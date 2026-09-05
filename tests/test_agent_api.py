@@ -20,6 +20,7 @@ from omniflow.api.routes.agent import (
 )
 from omniflow.providers.base import BaseLLMProvider
 from omniflow.rag.embeddings import EmbeddingService
+from omniflow.rag.service import RAGResult
 
 
 class _FakeLLMProvider(BaseLLMProvider):
@@ -128,8 +129,110 @@ class TestFileUpload:
         assert len(data["normalized_documents"]) == 1
         assert data["normalized_documents"][0]["filename"] == "notes.txt"
         assert data["normalized_documents"][0]["content"] == "Quarterly revenue increased."
-        # Ingested documents must be indexed into the (mocked) RAG service.
+        # Regression test for the Phase 5 performance fix: indexing is LAZY
+        # now -- an empty plan means the planner answered directly from
+        # unified_context and never selected rag_search, so the embedding
+        # backend must never be touched just because a file was uploaded.
+        # (This assertion used to require index_documents to have been
+        # called eagerly; that eager behavior is exactly what was fixed.)
+        rag_service_mock.index_documents.assert_not_called()
+
+
+class TestLazyRAGIndexing:
+    """Regression tests for the Phase 5 performance fix: RAG indexing is
+    deferred to RAGSearchTool's own first invocation, never performed
+    eagerly by the /query route -- see omniflow/tools/rag_search.py and
+    omniflow/api/routes/agent.py's _build_tool_registry(). The direct-answer
+    (no indexing) case is covered by
+    TestFileUpload::test_query_with_text_file_ingests_and_returns_normalized_document
+    above; these cover the RAG-tool-selected side of the same contract."""
+
+    def test_rag_tool_workflow_indexes_documents_before_retrieving(self, client: TestClient) -> None:
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _intent_result(intent=IntentType.QUESTION_ANSWERING),
+                Plan: [
+                    Plan(
+                        steps=[
+                            PlanStep(
+                                step_id=0,
+                                tool_name="rag_search",
+                                purpose="Search for the answer.",
+                                inputs={"query": "revenue"},
+                                expected_result="Evidence found.",
+                            )
+                        ]
+                    ),
+                    Plan(steps=[]),
+                ],
+            }
+        )
+        rag_service_mock = _override_agent_dependencies(client, provider)
+        rag_service_mock.retrieve.return_value = RAGResult(
+            query="revenue", results=[], has_evidence=False, top_k=4, score_threshold=0.2, message="No evidence found."
+        )
+
+        response = client.post(
+            "/query",
+            data={"query": "What was the revenue?"},
+            files=[("files", ("report.txt", b"Revenue was $5M.", "text/plain"))],
+        )
+
+        assert response.status_code == 200
         rag_service_mock.index_documents.assert_called_once()
+        rag_service_mock.retrieve.assert_called_once()
+        # Order matters: a real workflow must index before it can retrieve.
+        call_order = [c[0] for c in rag_service_mock.method_calls]
+        assert call_order.index("index_documents") < call_order.index("retrieve")
+
+    def test_repeated_rag_search_calls_index_documents_only_once(self, client: TestClient) -> None:
+        """Two replan cycles both selecting rag_search (within the
+        default max_retries=2 budget) must index the request's documents
+        exactly once, not once per call."""
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _intent_result(intent=IntentType.QUESTION_ANSWERING),
+                Plan: [
+                    Plan(
+                        steps=[
+                            PlanStep(
+                                step_id=0,
+                                tool_name="rag_search",
+                                purpose="Search for the first figure.",
+                                inputs={"query": "Q1 revenue"},
+                                expected_result="Q1 evidence found.",
+                            )
+                        ]
+                    ),
+                    Plan(
+                        steps=[
+                            PlanStep(
+                                step_id=0,
+                                tool_name="rag_search",
+                                purpose="Search for the second figure.",
+                                inputs={"query": "Q2 revenue"},
+                                expected_result="Q2 evidence found.",
+                            )
+                        ]
+                    ),
+                    Plan(steps=[]),
+                ],
+            }
+        )
+        rag_service_mock = _override_agent_dependencies(client, provider)
+        rag_service_mock.retrieve.return_value = RAGResult(
+            query="q", results=[], has_evidence=False, top_k=4, score_threshold=0.2, message="No evidence found."
+        )
+
+        response = client.post(
+            "/query",
+            data={"query": "Compare Q1 and Q2 revenue."},
+            files=[("files", ("report.txt", b"Q1: $5M. Q2: $6M.", "text/plain"))],
+        )
+
+        assert response.status_code == 200
+        rag_service_mock.index_documents.assert_called_once()
+        assert rag_service_mock.retrieve.call_count == 2
 
 
 class TestValidation:
@@ -219,9 +322,10 @@ class TestStatusAndErrorSurfacing:
         )
         rag_service_mock = _override_agent_dependencies(client, provider)
         rag_service_mock.retrieve.side_effect = RuntimeError("faiss exploded")
-        # RAGSearchTool is bound to rag_service_mock via get_tool_registry's own
-        # Depends(get_rag_service) chain, so overriding get_rag_service alone
-        # (done above) is sufficient -- no separate tool_registry override needed.
+        # RAGSearchTool is constructed from the (overridden) get_rag_service
+        # dependency directly in query_agent()'s body -- overriding
+        # get_rag_service alone (done above) is sufficient. index_documents()
+        # on the mock is a harmless no-op; retrieve() is what raises here.
 
         response = client.post("/query", data={"query": "What was revenue?"})
 

@@ -8,8 +8,13 @@ LangGraph workflow (intent -> clarity check -> plan/execute/observe/replan
 
 Every request gets its own fresh RAGService/ToolRegistry -- no index or
 tool state persists across requests (no persistent memory yet, per Phase 4
-scope). This route owns no orchestration logic itself; it only ingests,
-constructs state, calls run_graph(), and reshapes the result.
+scope). RAG indexing is LAZY (Phase 5 hardening): this route hands the
+request's normalized_documents to RAGSearchTool but never calls
+RAGService.index_documents() itself -- the tool indexes them only on its
+own first invocation, i.e. only if the planner actually selects rag_search.
+A direct-context request never loads the embedding backend just because
+files were uploaded. This route owns no orchestration logic itself; it
+only ingests, constructs state, calls run_graph(), and reshapes the result.
 """
 
 import logging
@@ -22,6 +27,7 @@ from functools import lru_cache
 from omniflow.api.routes.ingest import get_ingestion_service
 from omniflow.exceptions import ConfigurationError, InvalidInputError
 from omniflow.graph import run_graph
+from omniflow.models.document import NormalizedDocument
 from omniflow.models.request import UploadedInput
 from omniflow.models.response import OmniFlowResponse
 from omniflow.models.state import AgentState
@@ -94,15 +100,26 @@ def get_rag_service(
     return RAGService(embedding_service=embedding_service)
 
 
-def get_tool_registry(rag_service: RAGService = Depends(get_rag_service)) -> ToolRegistry:
-    """Dependency provider for the ToolRegistry the graph selects tools from.
+def _build_tool_registry(
+    rag_service: RAGService, normalized_documents: list[NormalizedDocument]
+) -> ToolRegistry:
+    """Builds the ToolRegistry the graph selects tools from.
 
-    Bundles every tool the planner is allowed to select: retrieval
-    (bound to this request's own RAGService) and YouTube transcript
-    retrieval (stateless).
+    Bundles every tool the planner is allowed to select: retrieval (bound
+    to this request's own RAGService AND this request's own just-ingested
+    documents) and YouTube transcript retrieval (stateless).
+
+    Not a FastAPI Depends() provider: it needs ``normalized_documents``,
+    which only exists after ingestion runs inside the route body --
+    FastAPI resolves every Depends() before that body ever executes, so
+    this must be a plain function called from within it (see query_agent()).
+    Constructing RAGSearchTool with these documents does NOT index them --
+    indexing is deferred to the tool's own first invocation (see
+    RAGSearchTool's docstring) so a direct-context request never loads the
+    embedding backend just because files were uploaded.
     """
     registry = ToolRegistry()
-    registry.register(RAGSearchTool(rag_service))
+    registry.register(RAGSearchTool(rag_service, normalized_documents))
     registry.register(YouTubeTranscriptTool())
     return registry
 
@@ -120,16 +137,23 @@ async def query_agent(
     ingestion_service: IngestionService = Depends(get_ingestion_service),
     llm_provider: BaseLLMProvider | ConfigurationError = Depends(get_llm_provider),
     rag_service: RAGService = Depends(get_rag_service),
-    tool_registry: ToolRegistry = Depends(get_tool_registry),
 ) -> OmniFlowResponse:
     """Runs the full agent workflow for a user query plus optional files.
 
-    Ingests any uploaded files via the existing IngestionService, indexes
-    them into a fresh per-request RAGService, constructs an AgentState, and
-    executes the LangGraph workflow end to end -- intent understanding,
-    ambiguity check (and, if ambiguous, an early stop with a clarifying
-    question), bounded plan/execute/observe/replan, synthesis, and
-    structural output validation.
+    Ingests any uploaded files via the existing IngestionService, constructs
+    an AgentState, and executes the LangGraph workflow end to end -- intent
+    understanding, ambiguity check (and, if ambiguous, an early stop with a
+    clarifying question), bounded plan/execute/observe/replan, synthesis,
+    and structural output validation.
+
+    RAG indexing is LAZY: this route never calls
+    rag_service.index_documents() itself. It hands this request's
+    normalized_documents to a fresh RAGSearchTool (see _build_tool_registry),
+    which indexes them only on its own first invocation -- i.e. only if the
+    planner actually selects rag_search. A direct-context request (e.g.
+    "summarize this PDF" answered straight from unified_context) never
+    triggers indexing, so it never loads the embedding backend
+    (sentence-transformers/Torch) at all.
     """
     if not query or not query.strip():
         raise InvalidInputError("query must not be empty.")
@@ -155,8 +179,7 @@ async def query_agent(
         files=file_payloads if file_payloads else None
     )
 
-    if normalized_docs:
-        rag_service.index_documents(normalized_docs)
+    tool_registry = _build_tool_registry(rag_service, normalized_docs)
 
     # Checked only after every client-attributable input error (blank
     # query, unsupported/oversized/corrupt files, OCR/transcription
