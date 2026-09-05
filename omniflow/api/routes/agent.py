@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from functools import lru_cache
 
 from omniflow.api.routes.ingest import get_ingestion_service
-from omniflow.exceptions import InvalidInputError
+from omniflow.exceptions import ConfigurationError, InvalidInputError
 from omniflow.graph import run_graph
 from omniflow.models.request import UploadedInput
 from omniflow.models.response import OmniFlowResponse
@@ -40,15 +40,29 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Agent"])
 
 
-def get_llm_provider() -> BaseLLMProvider:
+def get_llm_provider() -> BaseLLMProvider | ConfigurationError:
     """Dependency provider for the BaseLLMProvider used by the workflow.
 
     A fresh GeminiProvider per request (lightweight, no network call at
     construction -- see GeminiProvider's own docstring). Tests override
     this dependency with a mock provider; no real Gemini call is made in
     the test suite.
+
+    Returns the caught ConfigurationError instead of raising it when
+    GeminiProvider cannot be constructed (e.g. GEMINI_API_KEY unset).
+    FastAPI resolves every declared Depends() before the route body ever
+    runs, so a raised exception here would preempt FastAPI's own request
+    validation -- confirmed empirically: even a request missing the
+    required `query` field entirely was returning a 500 CONFIGURATION_ERROR
+    instead of a 422, since this dependency's failure short-circuited
+    dependency resolution before `query` was ever validated. query_agent()
+    re-raises this only after confirming the request itself is valid, so a
+    server configuration problem never masks the client's own mistake.
     """
-    return GeminiProvider()
+    try:
+        return GeminiProvider()
+    except ConfigurationError as exc:
+        return exc
 
 
 @lru_cache
@@ -104,7 +118,7 @@ async def query_agent(
         File(description="Optional list of file uploads (PDF, image, audio)."),
     ] = None,
     ingestion_service: IngestionService = Depends(get_ingestion_service),
-    llm_provider: BaseLLMProvider = Depends(get_llm_provider),
+    llm_provider: BaseLLMProvider | ConfigurationError = Depends(get_llm_provider),
     rag_service: RAGService = Depends(get_rag_service),
     tool_registry: ToolRegistry = Depends(get_tool_registry),
 ) -> OmniFlowResponse:
@@ -143,6 +157,16 @@ async def query_agent(
 
     if normalized_docs:
         rag_service.index_documents(normalized_docs)
+
+    # Checked only after every client-attributable input error (blank
+    # query, unsupported/oversized/corrupt files, OCR/transcription
+    # failures) has already had its chance to raise its own specific,
+    # actionable error above. A server configuration problem is real, but
+    # it must never mask a mistake that is actually the client's to fix --
+    # see get_llm_provider()'s docstring for why this can't just be a
+    # raised exception from a Depends().
+    if isinstance(llm_provider, ConfigurationError):
+        raise llm_provider
 
     initial_state = AgentState(
         original_request=query,

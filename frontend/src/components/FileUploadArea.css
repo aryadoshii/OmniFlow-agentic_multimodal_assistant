@@ -1,0 +1,55 @@
+.file-upload-area {
+  position: relative;
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 28px 20px;
+  text-align: center;
+  cursor: pointer;
+  background: var(--code-bg);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.file-upload-area:hover,
+.file-upload-area:focus-visible {
+  border-color: var(--accent-border);
+}
+
+.file-upload-area:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.file-upload-area--dragging {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.file-upload-area--disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.file-upload-area__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: inherit;
+  /* Clicks are handled by the wrapping div (keyboard-accessible via
+     role="button"); the input stays present only so drag-and-drop and
+     native file semantics work, but must not double-handle clicks. */
+  pointer-events: none;
+}
+
+.file-upload-area__text {
+  margin: 0 0 4px;
+  font-weight: 500;
+  color: var(--text-h);
+}
+
+.file-upload-area__hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}

@@ -267,6 +267,57 @@ class TestMissingGeminiConfiguration:
         data = response.json()
         assert data["error"]["code"] == "CONFIGURATION_ERROR"
 
+    def test_missing_query_field_still_returns_422_even_without_gemini_configured(
+        self, client: TestClient
+    ) -> None:
+        """Regression test for a real bug found via manual end-to-end
+        verification (Phase 5.1): get_llm_provider() used to raise
+        ConfigurationError directly, and since FastAPI resolves every
+        Depends() before the route body runs, that exception preempted
+        FastAPI's own request validation entirely -- a request missing the
+        required `query` field returned a 500 CONFIGURATION_ERROR instead
+        of a 422. get_llm_provider() now returns the caught error instead
+        of raising it, and query_agent() only re-raises it after confirming
+        the request itself is valid. No test here overrides
+        get_llm_provider or get_rag_service, matching the real failure
+        condition exactly."""
+        response = client.post("/query", data={})
+
+        assert response.status_code == 422
+        assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+    def test_blank_query_still_returns_400_even_without_gemini_configured(
+        self, client: TestClient
+    ) -> None:
+        response = client.post("/query", data={"query": "   "})
+
+        assert response.status_code == 400
+        assert response.json()["error"]["code"] == "INVALID_INPUT"
+
+    def test_unsupported_file_still_returns_415_even_without_gemini_configured(
+        self, client: TestClient
+    ) -> None:
+        """Regression test for a second instance of the same bug class,
+        found via manual end-to-end verification (Phase 5.2): the
+        ConfigurationError check originally ran BEFORE file ingestion in
+        query_agent()'s body, so an unsupported/oversized/corrupt file
+        (which IngestionService would otherwise reject with its own
+        specific, actionable error) was masked by a generic 500
+        CONFIGURATION_ERROR whenever GEMINI_API_KEY was unset. The check
+        now runs only after ingestion (and RAG indexing) has already had
+        its chance to raise its own error. No override here either --
+        matching the real failure condition exactly."""
+        response = client.post(
+            "/query",
+            data={"query": "What is this file?"},
+            files=[("files", ("bad_file.exe", b"not a real executable", "application/octet-stream"))],
+        )
+
+        assert response.status_code == 415
+        data = response.json()
+        assert data["error"]["code"] == "UNSUPPORTED_FILE_TYPE"
+        assert data["error"]["details"]["filename"] == "bad_file.exe"
+
 
 class TestEmbeddingModelCaching:
     """Hardening pass: the embedding model must not be reloaded from disk on

@@ -1,0 +1,109 @@
+.uploaded-file-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.uploaded-file-list__chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  max-width: 260px;
+}
+
+.uploaded-file-list__chip--issue {
+  border-color: #e5484d;
+  background: color-mix(in srgb, #e5484d 6%, var(--bg));
+}
+
+.uploaded-file-list__kind {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 4px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: white;
+  background: var(--accent);
+}
+
+.uploaded-file-list__kind--pdf {
+  background: #e5484d;
+}
+
+.uploaded-file-list__kind--image {
+  background: #30a46c;
+}
+
+.uploaded-file-list__kind--audio {
+  background: #f5a623;
+}
+
+.uploaded-file-list__kind--text {
+  background: #6b6375;
+}
+
+.uploaded-file-list__kind--unknown {
+  background: #8b8b8b;
+}
+
+.uploaded-file-list__info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.uploaded-file-list__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.uploaded-file-list__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.uploaded-file-list__chip--issue .uploaded-file-list__meta {
+  color: #c53030;
+}
+
+.uploaded-file-list__remove {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.uploaded-file-list__remove:hover:not(:disabled) {
+  background: var(--code-bg);
+  color: var(--text-h);
+}
+
+.uploaded-file-list__remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

@@ -1,0 +1,47 @@
+.conversation-turn {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.conversation-turn__query {
+  padding: 2px 2px 0;
+}
+
+.conversation-turn__query-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.conversation-turn__query-text {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-h);
+  white-space: pre-wrap;
+}
+
+.conversation-turn__query-files {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text);
+}
+
+/* Earlier turns stay visible (preserving context) but recede visually so
+   the latest result reads as the primary focus. */
+.conversation-turn--compact {
+  opacity: 0.7;
+}
+
+.conversation-turn--compact:hover {
+  opacity: 1;
+}
+
+.conversation-turn--compact .conversation-turn__query-text {
+  font-size: 14px;
+}
