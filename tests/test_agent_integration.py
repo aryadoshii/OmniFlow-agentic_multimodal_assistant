@@ -483,6 +483,66 @@ class TestRepeatedToolPrevention:
 
 
 # ---------------------------------------------------------------------------
+# Planner safety: only registered tools may ever be selected
+# ---------------------------------------------------------------------------
+
+
+class TestHallucinatedToolRejection:
+    def test_plan_naming_an_unregistered_tool_fails_gracefully_not_a_crash(self) -> None:
+        """Critical agent-behavior requirement: the planner must select
+        only registered tools. create_plan() itself already validates this
+        (see test_planner.py's unit-level coverage) -- this proves the
+        FULL graph absorbs a hallucinated tool name as a controlled
+        WorkflowStatus.FAILED outcome (still producing a best-effort
+        answer) rather than letting run_graph() raise or hang."""
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _intent_result(intent=IntentType.QUESTION_ANSWERING),
+                # No tool named "made_up_tool" is registered below -- the
+                # planner is hallucinating a capability that doesn't exist.
+                Plan: Plan(steps=[_step(0, tool_name="made_up_tool", inputs={"query": "x"})]),
+            }
+        )
+        graph = build_graph(ToolRegistry(), llm_provider=provider)  # empty registry
+
+        result = run_graph(AgentState(original_request="Do something."), compiled_graph=graph)
+
+        assert result.status == WorkflowStatus.FAILED
+        assert any("made_up_tool" in e for e in result.errors)
+        assert result.tool_call_history == []  # never actually invoked
+        # Still reaches a best-effort answer rather than leaving the user
+        # with nothing (see route_after_route_next: FAILED -> synthesize).
+        assert result.final_answer == "This is a synthesized test answer."
+
+
+class TestProviderFailure:
+    def test_gemini_provider_failure_during_intent_understanding_fails_gracefully(self) -> None:
+        """Distinct from 'no llm_provider configured' (ConfigurationError,
+        covered elsewhere): this simulates a REAL, live Gemini call failing
+        (rate limit, timeout, service outage) partway through a request --
+        exactly the ExternalProviderError contract GeminiProvider itself
+        raises (see test_gemini_provider.py). The graph must absorb it as
+        a controlled FAILED outcome, never a raised exception or a hang."""
+        from unittest.mock import MagicMock
+
+        from omniflow.exceptions import ExternalProviderError
+
+        failing_provider = MagicMock(spec=BaseLLMProvider)
+        failing_provider.generate_structured.side_effect = ExternalProviderError(
+            "Gemini rate limit or quota exceeded.", details={"reason": "rate_limited"}
+        )
+        failing_provider.generate.return_value = "Sorry, I could not complete this request."
+
+        graph = build_graph(ToolRegistry(), llm_provider=failing_provider)
+        result = run_graph(AgentState(original_request="Summarize this."), compiled_graph=graph)
+
+        assert result.status == WorkflowStatus.FAILED
+        assert any("EXTERNAL_PROVIDER_ERROR" in e for e in result.errors)
+        # Still produces a best-effort final answer rather than nothing.
+        assert result.final_answer == "Sorry, I could not complete this request."
+
+
+# ---------------------------------------------------------------------------
 # 12. Synthesis validation (bounded correction)
 # ---------------------------------------------------------------------------
 
