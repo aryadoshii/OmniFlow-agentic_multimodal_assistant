@@ -4,7 +4,6 @@ import pytest
 from pydantic import ValidationError
 
 from omniflow.models import (
-    AgentState,
     ExecutionTrace,
     ExtractionMethod,
     NormalizedDocument,
@@ -14,6 +13,7 @@ from omniflow.models import (
     UploadedInput,
     UserRequest,
 )
+from omniflow.models.state import AgentState
 
 
 def test_normalized_document_defaults() -> None:
@@ -115,6 +115,8 @@ def test_response_model() -> None:
 
 def test_agent_state_full_structure() -> None:
     """Verifies AgentState provides all containers required for future LangGraph orchestration."""
+    from omniflow.agents.planner import Plan, PlanStep
+
     state = AgentState(
         original_request="Analyze quarterly report",
         session_id="sess-99",
@@ -127,9 +129,18 @@ def test_agent_state_full_structure() -> None:
         ],
         detected_intent="document_analysis",
         constraints=["focus on revenue", "bullet points"],
-        plan=["extract_text", "retrieve_facts", "synthesize"],
-        planned_tools=["pdf_processor", "vector_rag"],
-        tool_results={"pdf_processor": "done"},
+        plan=Plan(
+            steps=[
+                PlanStep(
+                    step_id=0,
+                    tool_name="rag_search",
+                    purpose="Extract revenue figures from the report.",
+                    inputs={"query": "quarterly revenue"},
+                    expected_result="Revenue figures found.",
+                )
+            ]
+        ),
+        tool_results={"0": "done"},
         warnings=["OCR confidence medium"],
         final_answer="Quarterly revenue increased by 15%.",
     )
@@ -139,5 +150,5 @@ def test_agent_state_full_structure() -> None:
     assert state_dict["uploaded_inputs"][0]["filename"] == "report.pdf"
     assert state_dict["detected_intent"] == "document_analysis"
     assert len(state_dict["constraints"]) == 2
-    assert state_dict["planned_tools"] == ["pdf_processor", "vector_rag"]
+    assert state_dict["plan"]["steps"][0]["tool_name"] == "rag_search"
     assert state_dict["final_answer"] == "Quarterly revenue increased by 15%."

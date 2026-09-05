@@ -41,6 +41,12 @@ class Settings(BaseSettings):
         alias="LLM_MODEL",
         description="Default Gemini model to use in future phases.",
     )
+    gemini_timeout_seconds: float = Field(
+        default=30.0,
+        alias="GEMINI_TIMEOUT_SECONDS",
+        gt=0,
+        description="Request timeout in seconds for Gemini API calls.",
+    )
 
     # Upload and Ingestion Limits
     max_upload_size_mb: int = Field(
@@ -137,6 +143,30 @@ class Settings(BaseSettings):
         ge=0.0,
         le=1.0,
         description="Minimum cosine similarity score required for a chunk to be returned.",
+    )
+
+    # Bounded Agentic Execution (Phase 4.5)
+    max_agent_steps: int = Field(
+        default=6,
+        alias="MAX_AGENT_STEPS",
+        ge=1,
+        description="Maximum number of plan/execute/observe cycles allowed in a single "
+        "workflow run, regardless of what the planner decides -- the hard ceiling that "
+        "guarantees the agent loop always terminates.",
+    )
+    max_tool_calls: int = Field(
+        default=6,
+        alias="MAX_TOOL_CALLS",
+        ge=1,
+        description="Maximum total tool invocations allowed in a single workflow run.",
+    )
+    max_retries: int = Field(
+        default=2,
+        alias="MAX_RETRIES",
+        ge=1,
+        description="Maximum times the same tool (by name) may be invoked within a single "
+        "workflow run. Prevents the replanning loop from calling the same tool endlessly "
+        "(e.g. repeating a RAG query that already returned no evidence).",
     )
 
     @property
