@@ -6,6 +6,8 @@ import type { ApiError } from '../api/client'
 import type { OmniFlowResponse } from '../api/types'
 import { describeApiError } from '../lib/errorDisplay'
 import { AgentTrace } from './AgentTrace'
+import { CrossSourceAnalysisView } from './CrossSourceAnalysisView'
+import { EvidenceSection } from './EvidenceSection'
 import { ProcessedDocuments } from './ProcessedDocuments'
 import './ResponseArea.css'
 
@@ -102,6 +104,8 @@ function SuccessResponse({ data }: { data: OmniFlowResponse }) {
         <p className="response-area__answer response-area__answer--empty">No answer was produced.</p>
       )}
 
+      {data.cross_source_analysis && <CrossSourceAnalysisView analysis={data.cross_source_analysis} />}
+
       {data.errors.length > 0 && (
         <CollapsibleSection
           title={`Errors (${data.errors.length})`}
@@ -116,6 +120,8 @@ function SuccessResponse({ data }: { data: OmniFlowResponse }) {
       )}
 
       <ProcessedDocuments documents={data.normalized_documents} />
+
+      <EvidenceSection evidence={data.evidence} />
 
       {data.execution_trace && <AgentTrace trace={data.execution_trace} />}
     </div>

@@ -13,10 +13,10 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from omniflow.exceptions import EmbeddingGenerationError
-from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
-from omniflow.rag.chunking import DocumentChunker
-from omniflow.rag.vector_store import FAISSVectorStore
+from backend.exceptions import EmbeddingGenerationError
+from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
+from backend.rag.chunking import DocumentChunker
+from backend.rag.vector_store import FAISSVectorStore
 
 DIMENSION = 16
 

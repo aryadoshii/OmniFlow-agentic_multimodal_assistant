@@ -3,8 +3,8 @@
 import numpy as np
 import pytest
 
-from omniflow.exceptions import InvalidInputError, RAGRetrievalError
-from omniflow.rag.vector_store import FAISSVectorStore
+from backend.exceptions import InvalidInputError, RAGRetrievalError
+from backend.rag.vector_store import FAISSVectorStore
 
 
 def _unit_vec(dim: int = 384, seed: int = 0) -> np.ndarray:

@@ -13,17 +13,17 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
-from omniflow.api.routes.agent import (
+from backend.agents.intent import IntentResult, IntentType
+from backend.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
+from backend.api.routes.agent import (
     get_embedding_service,
     get_llm_provider,
     get_rag_service,
 )
-from omniflow.config import Settings
-from omniflow.providers.base import BaseLLMProvider
-from omniflow.rag.embeddings import EmbeddingService
-from omniflow.rag.service import RAGResult
+from backend.config import Settings
+from backend.providers.base import BaseLLMProvider
+from backend.rag.embeddings import EmbeddingService
+from backend.rag.service import RAGResult
 
 
 def _plan_to_wire_schema(plan: Plan) -> _PlanSchema:
@@ -170,8 +170,8 @@ class TestFileUpload:
 class TestLazyRAGIndexing:
     """Regression tests for the Phase 5 performance fix: RAG indexing is
     deferred to RAGSearchTool's own first invocation, never performed
-    eagerly by the /query route -- see omniflow/tools/rag_search.py and
-    omniflow/api/routes/agent.py's _build_tool_registry(). The direct-answer
+    eagerly by the /query route -- see backend/tools/rag_search.py and
+    backend/api/routes/agent.py's _build_tool_registry(). The direct-answer
     (no indexing) case is covered by
     TestFileUpload::test_query_with_text_file_ingests_and_returns_normalized_document
     above; these cover the RAG-tool-selected side of the same contract."""
@@ -399,7 +399,7 @@ class TestMissingGeminiConfiguration:
         # would otherwise satisfy the configuration check and defeat this
         # test's whole purpose.
         monkeypatch.setattr(
-            "omniflow.providers.gemini_provider.get_settings",
+            "backend.providers.gemini_provider.get_settings",
             lambda: Settings(_env_file=None),
         )
 
@@ -471,7 +471,7 @@ class TestEmbeddingModelCaching:
         assert first is second
 
     def test_get_rag_service_is_constructed_with_the_cached_embedding_service(self) -> None:
-        from omniflow.api.routes.agent import get_rag_service
+        from backend.api.routes.agent import get_rag_service
 
         shared_embedding_service = get_embedding_service()
         rag_service = get_rag_service(embedding_service=shared_embedding_service)

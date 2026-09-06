@@ -71,8 +71,12 @@ scratch/
 .sentence_transformers_cache/
 .hf_cache/
 hf_cache/
-models/
-model_cache/
+# Anchored to the repo root: an unanchored "models/" would also match
+# backend/models/ (the Python package directory), silently blocking any
+# new file added there from ever being tracked -- the same class of
+# collision as frontend/src/lib/ below.
+/models/
+/model_cache/
 *.bin
 *.safetensors
 *.onnx
@@ -89,4 +93,7 @@ model_cache/
 !frontend/src/lib/**
 
 # Local conversation history (SQLite) -- machine-local data, never committed.
-omniflow_history.db
+# The directory itself is committed (via database/.gitkeep) so it always
+# exists for history_store.py's init_db() to write into.
+database/*.db
+!database/.gitkeep

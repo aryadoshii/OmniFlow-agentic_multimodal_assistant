@@ -12,17 +12,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import (
+from backend.agents.intent import IntentResult, IntentType
+from backend.agents.planner import (
     Plan,
     PlanStep,
     _PlanSchema,
     _PlanStepSchema,
     create_plan,
 )
-from omniflow.exceptions import ExternalProviderError, OrchestrationError
-from omniflow.tools.base import BaseTool
-from omniflow.tools.registry import ToolRegistry
+from backend.exceptions import ExternalProviderError, OrchestrationError
+from backend.tools.base import BaseTool
+from backend.tools.registry import ToolRegistry
 from pydantic import BaseModel
 
 

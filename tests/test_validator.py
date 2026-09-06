@@ -4,7 +4,7 @@ No LLM/network is involved anywhere in this module -- validate_structure()
 is a pure function over (answer, constraints).
 """
 
-from omniflow.agents.validator import validate_structure
+from backend.agents.validator import validate_structure
 
 
 class TestNonEmpty:

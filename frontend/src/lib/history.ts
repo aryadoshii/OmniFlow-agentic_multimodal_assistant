@@ -1,4 +1,4 @@
-import type { ExecutionTrace, NormalizedDocument, OmniFlowResponse } from '../api/types'
+import type { CrossSourceAnalysis, EvidenceReference, ExecutionTrace, NormalizedDocument, OmniFlowResponse } from '../api/types'
 import type { ConversationDetail, ConversationSummary, StoredAssistantContent } from '../api/historyTypes'
 import type { ConversationTurn } from './conversation'
 
@@ -70,6 +70,8 @@ export function conversationDetailToTurns(detail: ConversationDetail): Conversat
           execution_trace: (parsed.execution_trace ?? null) as ExecutionTrace | null,
           warnings: parsed.warnings ?? [],
           errors: parsed.errors ?? [],
+          evidence: (parsed.evidence ?? []) as EvidenceReference[],
+          cross_source_analysis: (parsed.cross_source_analysis ?? null) as CrossSourceAnalysis | null,
         }
       } catch {
         response = null

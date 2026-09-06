@@ -8,15 +8,15 @@ etc.) which are out of scope for this phase.
 import pytest
 from pydantic import BaseModel
 
-from omniflow.exceptions import (
+from backend.exceptions import (
     InvalidInputError,
     ToolAlreadyRegisteredError,
     ToolExecutionError,
     ToolNotFoundError,
 )
-from omniflow.models.trace import ToolExecutionTrace
-from omniflow.tools.base import BaseTool
-from omniflow.tools.registry import ToolRegistry
+from backend.models.trace import ToolExecutionTrace
+from backend.tools.base import BaseTool
+from backend.tools.registry import ToolRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +255,7 @@ class TestExecution:
 
     def test_registry_has_no_orchestration_imports(self) -> None:
         """The registry module must not import any LLM/orchestration library."""
-        import omniflow.tools.registry as registry_module
+        import backend.tools.registry as registry_module
 
         source = registry_module.__file__
         with open(source, encoding="utf-8") as f:

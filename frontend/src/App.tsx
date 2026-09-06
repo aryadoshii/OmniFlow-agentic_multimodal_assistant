@@ -137,6 +137,8 @@ function App() {
         errors: response.errors,
         execution_trace: response.execution_trace,
         normalized_documents: response.normalized_documents,
+        evidence: response.evidence,
+        cross_source_analysis: response.cross_source_analysis,
         attachments: files.map((staged) => ({ filename: staged.file.name, mime_type: staged.file.type || 'application/octet-stream' })),
       })
 

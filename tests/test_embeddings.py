@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from omniflow.exceptions import EmbeddingGenerationError, InvalidInputError
-from omniflow.rag.embeddings import EmbeddingService
+from backend.exceptions import EmbeddingGenerationError, InvalidInputError
+from backend.rag.embeddings import EmbeddingService
 
 
 def _service_with_fake_model(dimension: int = 384, n: int = 1) -> EmbeddingService:

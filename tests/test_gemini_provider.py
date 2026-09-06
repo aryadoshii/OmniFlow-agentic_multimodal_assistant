@@ -15,9 +15,9 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from omniflow.config import Settings
-from omniflow.exceptions import ConfigurationError, ExternalProviderError
-from omniflow.providers.gemini_provider import GeminiProvider
+from backend.config import Settings
+from backend.exceptions import ConfigurationError, ExternalProviderError
+from backend.providers.gemini_provider import GeminiProvider
 
 
 def _settings(api_key: str | None = "fake-test-key", model: str = "gemini-2.5-flash") -> Settings:
@@ -65,12 +65,12 @@ class TestConstruction:
         """Constructing the provider must call genai.Client() (confirmed
         lightweight/side-effect-free) but never generate_content()."""
         mock_cls = _mock_client_returning(MagicMock(text="unused"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             GeminiProvider(settings=_settings())
         mock_cls.return_value.models.generate_content.assert_not_called()
 
     def test_missing_sdk_raises_configuration_error(self) -> None:
-        with patch("omniflow.providers.gemini_provider.genai", None):
+        with patch("backend.providers.gemini_provider.genai", None):
             with pytest.raises(ConfigurationError, match="not installed"):
                 GeminiProvider(settings=_settings())
 
@@ -78,9 +78,9 @@ class TestConstruction:
         """Importing the module must never construct a client or call the SDK."""
         mock_cls = MagicMock()
         with patch.dict(sys.modules):
-            sys.modules.pop("omniflow.providers.gemini_provider", None)
+            sys.modules.pop("backend.providers.gemini_provider", None)
             with patch("google.genai.Client", mock_cls):
-                importlib.import_module("omniflow.providers.gemini_provider")
+                importlib.import_module("backend.providers.gemini_provider")
         mock_cls.assert_not_called()
 
 
@@ -92,7 +92,7 @@ class TestConstruction:
 class TestConfigurationDriven:
     def test_configured_model_name_used_in_request(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text="hi"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings(model="gemini-1.5-pro"))
             provider.generate("hello")
 
@@ -101,7 +101,7 @@ class TestConfigurationDriven:
 
     def test_api_key_passed_to_client_not_hardcoded(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text="hi"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             GeminiProvider(settings=_settings(api_key="my-secret-key-value"))
 
         client_kwargs = mock_cls.call_args[1]
@@ -110,7 +110,7 @@ class TestConfigurationDriven:
     def test_timeout_setting_passed_to_http_options(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text="hi"))
         settings = Settings(GEMINI_API_KEY="fake", LLM_MODEL="gemini-2.5-flash", GEMINI_TIMEOUT_SECONDS=5)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             GeminiProvider(settings=settings)
 
         http_options = mock_cls.call_args[1]["http_options"]
@@ -121,7 +121,7 @@ class TestConfigurationDriven:
         behavior, so a 429 surfaces immediately rather than after ~5 silent
         retries -- required for predictable free-tier-safe behavior."""
         mock_cls = _mock_client_returning(MagicMock(text="hi"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             GeminiProvider(settings=_settings())
 
         http_options = mock_cls.call_args[1]["http_options"]
@@ -136,7 +136,7 @@ class TestConfigurationDriven:
 class TestSuccessfulGeneration:
     def test_plain_text_generation(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text="Paris is the capital of France."))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             result = provider.generate("What is the capital of France?")
 
@@ -144,7 +144,7 @@ class TestSuccessfulGeneration:
 
     def test_plain_text_generation_passes_system_instruction(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text="ok"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             provider.generate("hello", system_instruction="Be concise.")
 
@@ -155,7 +155,7 @@ class TestSuccessfulGeneration:
         mock_cls = _mock_client_returning(
             MagicMock(text='{"intent": "search", "confidence": 0.87}')
         )
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             result = provider.generate_structured("classify this", _SampleIntent)
 
@@ -167,7 +167,7 @@ class TestSuccessfulGeneration:
         mock_cls = _mock_client_returning(
             MagicMock(text='{"intent": "search", "confidence": 0.5}')
         )
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             provider.generate_structured("classify this", _SampleIntent)
 
@@ -184,7 +184,7 @@ class TestSuccessfulGeneration:
 class TestMalformedStructuredOutput:
     def test_invalid_json_raises_external_provider_error(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text="not valid json at all"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate_structured("classify this", _SampleIntent)
@@ -193,7 +193,7 @@ class TestMalformedStructuredOutput:
 
     def test_json_missing_required_fields_raises_external_provider_error(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text='{"unrelated_field": 1}'))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate_structured("classify this", _SampleIntent)
@@ -202,7 +202,7 @@ class TestMalformedStructuredOutput:
 
     def test_empty_response_raises_external_provider_error(self) -> None:
         mock_cls = _mock_client_returning(MagicMock(text=""))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate_structured("classify this", _SampleIntent)
@@ -223,7 +223,7 @@ class TestFailureMapping:
             code=401, response_json={"error": {"message": "bad key", "status": "UNAUTHENTICATED"}}
         )
         mock_cls = _mock_client_raising(exc)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ConfigurationError) as exc_info:
                 provider.generate("hello")
@@ -236,7 +236,7 @@ class TestFailureMapping:
             code=403, response_json={"error": {"message": "denied", "status": "PERMISSION_DENIED"}}
         )
         mock_cls = _mock_client_raising(exc)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ConfigurationError):
                 provider.generate("hello")
@@ -248,7 +248,7 @@ class TestFailureMapping:
             code=404, response_json={"error": {"message": "not found", "status": "NOT_FOUND"}}
         )
         mock_cls = _mock_client_raising(exc)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings(model="not-a-real-model"))
             with pytest.raises(ConfigurationError) as exc_info:
                 provider.generate("hello")
@@ -262,7 +262,7 @@ class TestFailureMapping:
             response_json={"error": {"message": "quota exceeded", "status": "RESOURCE_EXHAUSTED"}},
         )
         mock_cls = _mock_client_raising(exc)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate("hello")
@@ -277,7 +277,7 @@ class TestFailureMapping:
             code=503, response_json={"error": {"message": "unavailable", "status": "UNAVAILABLE"}}
         )
         mock_cls = _mock_client_raising(exc)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate("hello")
@@ -285,7 +285,7 @@ class TestFailureMapping:
 
     def test_timeout_raises_external_provider_error(self) -> None:
         mock_cls = _mock_client_raising(httpx.TimeoutException("request timed out"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate("hello")
@@ -293,7 +293,7 @@ class TestFailureMapping:
 
     def test_network_error_raises_external_provider_error(self) -> None:
         mock_cls = _mock_client_raising(httpx.ConnectError("connection refused"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate("hello")
@@ -301,7 +301,7 @@ class TestFailureMapping:
 
     def test_unexpected_exception_raises_external_provider_error(self) -> None:
         mock_cls = _mock_client_raising(RuntimeError("something broke"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
             with pytest.raises(ExternalProviderError) as exc_info:
                 provider.generate("hello")
@@ -315,7 +315,7 @@ class TestFailureMapping:
             code=401, response_json={"error": {"message": "bad key", "status": "UNAUTHENTICATED"}}
         )
         mock_cls = _mock_client_raising(exc)
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings(api_key="super-secret-value-xyz"))
             with pytest.raises(ConfigurationError) as exc_info:
                 provider.generate("hello")
@@ -330,10 +330,10 @@ class TestFailureMapping:
 
 class TestBaseLLMProviderContract:
     def test_gemini_provider_is_a_base_llm_provider(self) -> None:
-        from omniflow.providers.base import BaseLLMProvider
+        from backend.providers.base import BaseLLMProvider
 
         mock_cls = _mock_client_returning(MagicMock(text="hi"))
-        with patch("omniflow.providers.gemini_provider.genai.Client", mock_cls):
+        with patch("backend.providers.gemini_provider.genai.Client", mock_cls):
             provider = GeminiProvider(settings=_settings())
         assert isinstance(provider, BaseLLMProvider)
 
@@ -341,7 +341,7 @@ class TestBaseLLMProviderContract:
         """The module may discuss LangGraph in prose (docstrings describing
         the future architecture) but must never actually import it or any
         orchestration/tool/RAG component."""
-        import omniflow.providers.gemini_provider as provider_module
+        import backend.providers.gemini_provider as provider_module
 
         with open(provider_module.__file__, encoding="utf-8") as f:
             lines = f.readlines()
@@ -351,10 +351,10 @@ class TestBaseLLMProviderContract:
         ]
         forbidden_modules = [
             "langgraph",
-            "omniflow.models.state",
-            "omniflow.tools",
-            "omniflow.rag",
-            "omniflow.graph",
+            "backend.models.state",
+            "backend.tools",
+            "backend.rag",
+            "backend.graph",
         ]
         for line in import_lines:
             for forbidden in forbidden_modules:

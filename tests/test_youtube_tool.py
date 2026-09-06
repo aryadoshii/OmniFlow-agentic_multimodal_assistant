@@ -11,13 +11,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from omniflow.exceptions import (
+from backend.exceptions import (
     ExternalProviderError,
     InvalidInputError,
     TranscriptUnavailableError,
 )
-from omniflow.tools.registry import ToolRegistry
-from omniflow.tools.youtube import (
+from backend.tools.registry import ToolRegistry
+from backend.tools.youtube import (
     TranscriptSegment,
     YouTubeTranscriptInput,
     YouTubeTranscriptOutput,
@@ -184,7 +184,7 @@ class TestSuccessfulRetrieval:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output = tool.run(tool_input)
 
         assert isinstance(output, YouTubeTranscriptOutput)
@@ -206,7 +206,7 @@ class TestSuccessfulRetrieval:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output = tool.run(tool_input)
 
         assert output.segment_count == 3
@@ -220,7 +220,7 @@ class TestSuccessfulRetrieval:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output = tool.run(tool_input)
 
         assert output.transcript == ""
@@ -239,7 +239,7 @@ class TestSuccessfulRetrieval:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output = tool.run(tool_input)
 
         assert output.transcript == "Repeated line. Final line."
@@ -257,7 +257,7 @@ class TestSuccessfulRetrieval:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output = tool.run(tool_input)
 
         assert len(output.segments) == 1
@@ -278,8 +278,8 @@ class TestSuccessfulRetrieval:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)), \
-             patch("omniflow.tools.youtube.get_settings") as mock_settings:
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)), \
+             patch("backend.tools.youtube.get_settings") as mock_settings:
             mock_settings.return_value.youtube_transcript_max_chars = 100
             output = tool.run(tool_input)
 
@@ -301,9 +301,9 @@ class TestFailureHandling:
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
         with patch(
-            "omniflow.tools.youtube._UNAVAILABLE_EXCEPTIONS", (FakeTranscriptsDisabled,)
+            "backend.tools.youtube._UNAVAILABLE_EXCEPTIONS", (FakeTranscriptsDisabled,)
         ), patch(
-            "omniflow.tools.youtube.YouTubeTranscriptApi",
+            "backend.tools.youtube.YouTubeTranscriptApi",
             _mock_api_raising(FakeTranscriptsDisabled("disabled")),
         ):
             with pytest.raises(TranscriptUnavailableError) as exc_info:
@@ -320,9 +320,9 @@ class TestFailureHandling:
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
         with patch(
-            "omniflow.tools.youtube.YouTubeTranscriptApiException", FakeProviderException
+            "backend.tools.youtube.YouTubeTranscriptApiException", FakeProviderException
         ), patch(
-            "omniflow.tools.youtube.YouTubeTranscriptApi",
+            "backend.tools.youtube.YouTubeTranscriptApi",
             _mock_api_raising(FakeProviderException("blocked")),
         ):
             with pytest.raises(ExternalProviderError) as exc_info:
@@ -335,7 +335,7 @@ class TestFailureHandling:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", None):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", None):
             with pytest.raises(ExternalProviderError, match="not installed"):
                 tool.run(tool_input)
 
@@ -358,7 +358,7 @@ class TestStructuredOutput:
         tool = YouTubeTranscriptTool()
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output = tool.run(tool_input)
 
         assert isinstance(output, BaseModel)
@@ -381,7 +381,7 @@ class TestStructuredOutput:
 
 class TestNoOrchestrationCoupling:
     def test_module_has_no_forbidden_imports(self) -> None:
-        import omniflow.tools.youtube as youtube_module
+        import backend.tools.youtube as youtube_module
 
         with open(youtube_module.__file__, encoding="utf-8") as f:
             content = f.read().lower()
@@ -401,7 +401,7 @@ class TestRegistryIntegration:
         registry = ToolRegistry()
         registry.register(YouTubeTranscriptTool())
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_api_returning(fake)):
             output, trace = registry.execute(
                 "youtube_transcript", url=f"https://youtu.be/{VALID_VIDEO_ID}"
             )
@@ -431,9 +431,9 @@ class TestRegistryIntegration:
         registry.register(YouTubeTranscriptTool())
 
         with patch(
-            "omniflow.tools.youtube._UNAVAILABLE_EXCEPTIONS", (FakeTranscriptsDisabled,)
+            "backend.tools.youtube._UNAVAILABLE_EXCEPTIONS", (FakeTranscriptsDisabled,)
         ), patch(
-            "omniflow.tools.youtube.YouTubeTranscriptApi",
+            "backend.tools.youtube.YouTubeTranscriptApi",
             _mock_api_raising(FakeTranscriptsDisabled("disabled")),
         ):
             with pytest.raises(TranscriptUnavailableError) as exc_info:
@@ -454,9 +454,9 @@ class TestRegistryIntegration:
         tool_input = YouTubeTranscriptInput(url=f"https://youtu.be/{VALID_VIDEO_ID}")
 
         with patch(
-            "omniflow.tools.youtube._UNAVAILABLE_EXCEPTIONS", (FakeTranscriptsDisabled,)
+            "backend.tools.youtube._UNAVAILABLE_EXCEPTIONS", (FakeTranscriptsDisabled,)
         ), patch(
-            "omniflow.tools.youtube.YouTubeTranscriptApi",
+            "backend.tools.youtube.YouTubeTranscriptApi",
             _mock_api_raising(FakeTranscriptsDisabled("disabled")),
         ):
             with pytest.raises(TranscriptUnavailableError) as exc_info:

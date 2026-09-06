@@ -15,16 +15,16 @@ import json
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
-from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
-from omniflow.config import Settings
-from omniflow.graph import build_graph, run_graph
-from omniflow.models.state import AgentState, WorkflowStatus
-from omniflow.providers.base import BaseLLMProvider
-from omniflow.rag.service import RAGResult, RetrievedChunk
-from omniflow.tools.rag_search import RAGSearchTool
-from omniflow.tools.registry import ToolRegistry
-from omniflow.tools.youtube import YouTubeTranscriptTool
+from backend.agents.intent import IntentResult, IntentType
+from backend.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
+from backend.config import Settings
+from backend.graph import build_graph, run_graph
+from backend.models.state import AgentState, WorkflowStatus
+from backend.providers.base import BaseLLMProvider
+from backend.rag.service import RAGResult, RetrievedChunk
+from backend.tools.rag_search import RAGSearchTool
+from backend.tools.registry import ToolRegistry
+from backend.tools.youtube import YouTubeTranscriptTool
 
 VALID_YOUTUBE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
 
@@ -251,7 +251,7 @@ class TestYouTubeWorkflow:
         )
         graph = build_graph(_registry(YouTubeTranscriptTool()), llm_provider=provider)
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_youtube_api_returning("Welcome to the talk.")):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_youtube_api_returning("Welcome to the talk.")):
             result = run_graph(
                 AgentState(original_request="Summarize this video."), compiled_graph=graph
             )
@@ -287,7 +287,7 @@ class TestTwoStepWorkflow:
         registry = _registry(YouTubeTranscriptTool(), RAGSearchTool(rag_service))
         graph = build_graph(registry, llm_provider=provider)
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_youtube_api_returning("Deep dive on agents.")):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_youtube_api_returning("Deep dive on agents.")):
             result = run_graph(
                 AgentState(original_request="Summarize the YouTube video mentioned in this PDF."),
                 compiled_graph=graph,
@@ -326,7 +326,7 @@ class TestMultiStepWorkflow:
         registry = _registry(YouTubeTranscriptTool(), RAGSearchTool(rag_service))
         graph = build_graph(registry, llm_provider=provider)
 
-        with patch("omniflow.tools.youtube.YouTubeTranscriptApi", _mock_youtube_api_returning("transcript text")):
+        with patch("backend.tools.youtube.YouTubeTranscriptApi", _mock_youtube_api_returning("transcript text")):
             result = run_graph(
                 AgentState(original_request="Compare this audio with the PDF."), compiled_graph=graph
             )
@@ -372,7 +372,7 @@ class TestClarification:
         uploaded/normalized documents) that a future turn could continue
         the task once the user answers -- even though resuming isn't
         implemented yet (no persistent memory in this phase)."""
-        from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
+        from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
 
         doc = NormalizedDocument(
             filename="report.pdf",
@@ -475,7 +475,7 @@ class TestExecutionBudget:
         graph = build_graph(_registry(_EchoTool()), llm_provider=provider)
         low_budget_settings = Settings(MAX_AGENT_STEPS=2, MAX_TOOL_CALLS=10, MAX_RETRIES=10)
 
-        with patch("omniflow.graph.nodes.get_settings", return_value=low_budget_settings):
+        with patch("backend.graph.nodes.get_settings", return_value=low_budget_settings):
             result = run_graph(AgentState(original_request="loop forever"), compiled_graph=graph)
 
         assert result.status == WorkflowStatus.FAILED
@@ -501,7 +501,7 @@ class TestRepeatedToolPrevention:
         graph = build_graph(_registry(_EchoTool()), llm_provider=provider)
         generous_steps_settings = Settings(MAX_AGENT_STEPS=10, MAX_TOOL_CALLS=10, MAX_RETRIES=2)
 
-        with patch("omniflow.graph.nodes.get_settings", return_value=generous_steps_settings):
+        with patch("backend.graph.nodes.get_settings", return_value=generous_steps_settings):
             result = run_graph(AgentState(original_request="call echo forever"), compiled_graph=graph)
 
         assert result.status == WorkflowStatus.FAILED
@@ -552,7 +552,7 @@ class TestProviderFailure:
         a controlled FAILED outcome, never a raised exception or a hang."""
         from unittest.mock import MagicMock
 
-        from omniflow.exceptions import ExternalProviderError
+        from backend.exceptions import ExternalProviderError
 
         failing_provider = MagicMock(spec=BaseLLMProvider)
         failing_provider.generate_structured.side_effect = ExternalProviderError(
@@ -586,9 +586,9 @@ class TestAudioWorkflowEndToEnd:
     """
 
     def test_audio_duration_reaches_synthesis_prompt_via_real_ingestion(self) -> None:
-        from omniflow.processors.audio_processor import AudioProcessor
-        from omniflow.services.ingestion import IngestionService
-        from omniflow.services.whisper_service import WhisperService
+        from backend.processors.audio_processor import AudioProcessor
+        from backend.services.ingestion import IngestionService
+        from backend.services.whisper_service import WhisperService
         from tests.test_processors import create_sample_wav_bytes
 
         mock_whisper = MagicMock(spec=WhisperService)
@@ -633,9 +633,9 @@ class TestImageCodeWorkflowEndToEnd:
     boundary) and confirms the OCR'd code text actually reaches synthesis."""
 
     def test_ocr_extracted_code_reaches_synthesis_prompt_via_real_ingestion(self) -> None:
-        from omniflow.processors.image_processor import ImageProcessor
-        from omniflow.services.ingestion import IngestionService
-        from omniflow.services.ocr_service import OCRService
+        from backend.processors.image_processor import ImageProcessor
+        from backend.services.ingestion import IngestionService
+        from backend.services.ocr_service import OCRService
         from tests.test_processors import create_sample_image_bytes
 
         mock_ocr = MagicMock(spec=OCRService)

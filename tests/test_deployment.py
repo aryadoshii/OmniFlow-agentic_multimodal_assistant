@@ -5,7 +5,7 @@ create_app() decides this once, at construction time, using the REAL
 (process-wide, lru_cache'd) get_settings() -- not a per-request Depends()
 override -- exactly like a real deployed container would (APP_ENV=production
 is part of its actual startup environment). These tests patch
-omniflow.main.get_settings and omniflow.main._FRONTEND_DIST directly to
+backend.main.get_settings and backend.main._FRONTEND_DIST directly to
 exercise both branches without needing a real build or a real production
 environment.
 """
@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from omniflow.config import Settings
-from omniflow.main import create_app
+from backend.config import Settings
+from backend.main import create_app
 
 
 def _settings(app_env: str) -> Settings:
@@ -34,8 +34,8 @@ class TestDevelopmentAndTestServeJsonRoot:
         (built_dist / "index.html").write_text("<html>fake spa</html>")
 
         with (
-            patch("omniflow.main.get_settings", return_value=_settings("development")),
-            patch("omniflow.main._FRONTEND_DIST", built_dist),
+            patch("backend.main.get_settings", return_value=_settings("development")),
+            patch("backend.main._FRONTEND_DIST", built_dist),
         ):
             app = create_app()
             with TestClient(app) as client:
@@ -49,8 +49,8 @@ class TestDevelopmentAndTestServeJsonRoot:
         missing_dist = tmp_path / "dist"  # deliberately never created
 
         with (
-            patch("omniflow.main.get_settings", return_value=_settings("production")),
-            patch("omniflow.main._FRONTEND_DIST", missing_dist),
+            patch("backend.main.get_settings", return_value=_settings("production")),
+            patch("backend.main._FRONTEND_DIST", missing_dist),
         ):
             app = create_app()
             with TestClient(app) as client:
@@ -68,8 +68,8 @@ class TestProductionServesBuiltFrontend:
         (built_dist / "assets" / "index-abc123.js").write_text("console.log('app');")
 
         with (
-            patch("omniflow.main.get_settings", return_value=_settings("production")),
-            patch("omniflow.main._FRONTEND_DIST", built_dist),
+            patch("backend.main.get_settings", return_value=_settings("production")),
+            patch("backend.main._FRONTEND_DIST", built_dist),
         ):
             app = create_app()
             with TestClient(app) as client:
@@ -97,8 +97,8 @@ class TestProductionServesBuiltFrontend:
         (built_dist / "index.html").write_text("<html>spa</html>")
 
         with (
-            patch("omniflow.main.get_settings", return_value=_settings("production")),
-            patch("omniflow.main._FRONTEND_DIST", built_dist),
+            patch("backend.main.get_settings", return_value=_settings("production")),
+            patch("backend.main._FRONTEND_DIST", built_dist),
         ):
             app = create_app()
             with TestClient(app) as client:

@@ -1,20 +1,18 @@
 # OmniFlow Frontend
 
-A single-page React + Vite + TypeScript client for the OmniFlow FastAPI backend.
-
-## What this is
-
-- One page: a query box, a file drop area, and a response panel.
-- Talks to the backend's existing `/query` and `/ingest` endpoints only — no
-  ingestion, RAG, planning, tool execution, or LLM logic is reimplemented
-  here. This app renders what the backend returns.
+A React + Vite + TypeScript client for the OmniFlow FastAPI backend: a
+premium multimodal workspace (file upload, query composer, conversation
+history) plus cross-source analysis and answer-provenance views. Talks to
+the backend's existing `/query`, `/ingest`, and `/conversations` endpoints
+only — no ingestion, RAG, planning, tool execution, or LLM logic is
+reimplemented here. This app renders what the backend returns.
 
 ## Development
 
 The backend must be running separately (from the repo root):
 
 ```bash
-uvicorn omniflow.main:app --reload
+uv run uvicorn backend.main:app --reload
 ```
 
 Then, in this directory:
@@ -25,11 +23,11 @@ npm run dev
 ```
 
 Requests to `/api/*` are proxied to `http://127.0.0.1:8000` by
-`vite.config.ts` (matching `omniflow.config.Settings`' default HOST/PORT),
+`vite.config.ts` (matching `backend.config.Settings`' default HOST/PORT),
 with the `/api` prefix stripped before forwarding — the backend's own
-routes are mounted at root (`/query`, `/ingest`, `/health`). Set
-`OMNIFLOW_BACKEND_ORIGIN` before running `npm run dev` if your backend runs
-elsewhere.
+routes are mounted at root (`/query`, `/ingest`, `/health`,
+`/conversations`). Set `OMNIFLOW_BACKEND_ORIGIN` before running `npm run
+dev` if your backend runs elsewhere.
 
 ## Configuration
 

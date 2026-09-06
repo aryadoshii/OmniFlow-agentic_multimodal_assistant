@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from omniflow.models import (
+from backend.models import (
     ExecutionTrace,
     ExtractionMethod,
     NormalizedDocument,
@@ -13,7 +13,7 @@ from omniflow.models import (
     UploadedInput,
     UserRequest,
 )
-from omniflow.models.state import AgentState
+from backend.models.state import AgentState
 
 
 def test_normalized_document_defaults() -> None:
@@ -115,7 +115,7 @@ def test_response_model() -> None:
 
 def test_agent_state_full_structure() -> None:
     """Verifies AgentState provides all containers required for future LangGraph orchestration."""
-    from omniflow.agents.planner import Plan, PlanStep
+    from backend.agents.planner import Plan, PlanStep
 
     state = AgentState(
         original_request="Analyze quarterly report",

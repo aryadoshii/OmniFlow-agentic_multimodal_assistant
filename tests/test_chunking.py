@@ -2,8 +2,8 @@
 
 import pytest
 
-from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
-from omniflow.rag.chunking import DocumentChunker
+from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
+from backend.rag.chunking import DocumentChunker
 
 
 def _make_doc(content: str, filename: str = "test.txt") -> NormalizedDocument:
@@ -31,7 +31,7 @@ class TestDocumentChunkerInit:
             DocumentChunker(chunk_size=100, chunk_overlap=150)
 
     def test_defaults_come_from_settings(self):
-        from omniflow.config import get_settings
+        from backend.config import get_settings
 
         settings = get_settings()
         chunker = DocumentChunker()
@@ -130,7 +130,7 @@ class TestMetadataInheritance:
 
     def test_pdf_page_metadata_preserved(self):
         """Per-page extraction metadata already produced by PDFProcessor
-        (see omniflow/processors/pdf_processor.py) must survive chunking."""
+        (see backend/processors/pdf_processor.py) must survive chunking."""
         chunker = DocumentChunker()
         doc = NormalizedDocument(
             filename="report.pdf",

@@ -11,9 +11,9 @@ from unittest.mock import MagicMock
 
 from pydantic import BaseModel
 
-from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.synthesizer import synthesize_answer
-from omniflow.models.state import AgentState
+from backend.agents.intent import IntentResult, IntentType
+from backend.agents.synthesizer import synthesize_answer
+from backend.models.state import AgentState
 
 
 class _DummyToolOutput(BaseModel):
@@ -169,7 +169,7 @@ class TestIntentSpecificSystemInstruction:
 
 class TestFailurePropagation:
     def test_provider_failure_propagates_unmodified(self) -> None:
-        from omniflow.exceptions import ExternalProviderError
+        from backend.exceptions import ExternalProviderError
 
         provider = _mock_provider_raising(ExternalProviderError("rate limited"))
         state = AgentState(original_request="x")

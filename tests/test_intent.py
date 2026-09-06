@@ -11,10 +11,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from omniflow.agents.intent import IntentResult, IntentType, understand_intent
-from omniflow.exceptions import ExternalProviderError
-from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
-from omniflow.models.state import AgentState
+from backend.agents.intent import IntentResult, IntentType, understand_intent
+from backend.exceptions import ExternalProviderError
+from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
+from backend.models.state import AgentState
 
 
 def _mock_provider_returning(result: IntentResult) -> MagicMock:

@@ -11,18 +11,18 @@ from unittest.mock import MagicMock
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from omniflow.exceptions import (
+from backend.exceptions import (
     EmbeddingGenerationError,
     InvalidInputError,
     RAGRetrievalError,
     ToolAlreadyRegisteredError,
     ToolNotFoundError,
 )
-from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
-from omniflow.rag.service import RAGResult, RetrievedChunk
-from omniflow.tools.rag_search import RAGSearchInput, RAGSearchOutput, RAGSearchTool
-from omniflow.tools.registry import ToolRegistry
-from omniflow.tools.youtube import YouTubeTranscriptTool
+from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
+from backend.rag.service import RAGResult, RetrievedChunk
+from backend.tools.rag_search import RAGSearchInput, RAGSearchOutput, RAGSearchTool
+from backend.tools.registry import ToolRegistry
+from backend.tools.youtube import YouTubeTranscriptTool
 
 
 def _make_document(content: str = "Some document content.") -> NormalizedDocument:
@@ -170,7 +170,7 @@ class TestLazyIndexing:
     run() call, at most once per instance -- never at construction time.
     This is what lets a direct-context request avoid loading the embedding
     backend (sentence-transformers/Torch) just because files were uploaded;
-    see omniflow/api/routes/agent.py's _build_tool_registry()."""
+    see backend/api/routes/agent.py's _build_tool_registry()."""
 
     def _tool_with_no_evidence(self, documents: list[NormalizedDocument] | None) -> tuple[RAGSearchTool, MagicMock]:
         rag_service = _mock_rag_service_returning(

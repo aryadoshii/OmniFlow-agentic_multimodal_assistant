@@ -9,13 +9,13 @@ called anywhere in this file.
 
 from pydantic import BaseModel
 
-from omniflow.agents.planner import Plan, PlanStep
-from omniflow.exceptions import InvalidInputError, ToolExecutionError
-from omniflow.graph.nodes import make_execute_tool_node
-from omniflow.models.state import AgentState, WorkflowStatus
-from omniflow.models.trace import ToolExecutionTrace
-from omniflow.tools.base import BaseTool
-from omniflow.tools.registry import ToolRegistry
+from backend.agents.planner import Plan, PlanStep
+from backend.exceptions import InvalidInputError, ToolExecutionError
+from backend.graph.nodes import make_execute_tool_node
+from backend.models.state import AgentState, WorkflowStatus
+from backend.models.trace import ToolExecutionTrace
+from backend.tools.base import BaseTool
+from backend.tools.registry import ToolRegistry
 
 
 class _SearchInput(BaseModel):
@@ -333,7 +333,7 @@ class TestExecutionTrace:
 
 class TestNoDirectDependencies:
     def test_nodes_module_has_no_gemini_or_rag_or_youtube_import(self) -> None:
-        import omniflow.graph.nodes as nodes_module
+        import backend.graph.nodes as nodes_module
 
         with open(nodes_module.__file__, encoding="utf-8") as f:
             import_lines = [
@@ -343,10 +343,10 @@ class TestNoDirectDependencies:
             ]
         forbidden = [
             "google.genai",
-            "omniflow.providers.gemini_provider",
-            "omniflow.tools.youtube",
-            "omniflow.tools.rag_search",
-            "omniflow.rag.",
+            "backend.providers.gemini_provider",
+            "backend.tools.youtube",
+            "backend.tools.rag_search",
+            "backend.rag.",
         ]
         for line in import_lines:
             for term in forbidden:

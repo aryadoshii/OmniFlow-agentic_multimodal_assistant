@@ -3,15 +3,15 @@
 from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
-from omniflow.api.routes.ingest import get_ingestion_service
-from omniflow.config import Settings
-from omniflow.exceptions import UnsupportedFileError, UploadValidationError
-from omniflow.models.document import SourceType
-from omniflow.processors.image_processor import ImageProcessor
-from omniflow.processors.pdf_processor import PDFProcessor
-from omniflow.processors.text_processor import TextProcessor
-from omniflow.services.ingestion import IngestionService
-from omniflow.services.ocr_service import OCRService
+from backend.api.routes.ingest import get_ingestion_service
+from backend.config import Settings
+from backend.exceptions import UnsupportedFileError, UploadValidationError
+from backend.models.document import SourceType
+from backend.processors.image_processor import ImageProcessor
+from backend.processors.pdf_processor import PDFProcessor
+from backend.processors.text_processor import TextProcessor
+from backend.services.ingestion import IngestionService
+from backend.services.ocr_service import OCRService
 from tests.test_processors import (
     create_sample_image_bytes,
     create_sample_pdf_bytes,

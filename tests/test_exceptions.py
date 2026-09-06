@@ -3,8 +3,8 @@
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from omniflow.api.error_handlers import register_error_handlers
-from omniflow.exceptions import (
+from backend.api.error_handlers import register_error_handlers
+from backend.exceptions import (
     ConfigurationError,
     ExternalProviderError,
     InvalidInputError,

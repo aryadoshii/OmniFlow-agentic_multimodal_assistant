@@ -2,8 +2,8 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from omniflow.config import Settings, get_settings
-from omniflow.main import create_app
+from backend.config import Settings, get_settings
+from backend.main import create_app
 
 
 @pytest.fixture

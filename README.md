@@ -85,7 +85,7 @@ ToolRegistry
 - **Full source attribution**: every retrieved chunk carries its originating `document_id`, `filename`, `source_type`, `extraction_method`, chunk position, and any page/segment metadata the ingestion layer already produced (e.g. a PDF's per-page breakdown) — traceable all the way back to the original upload.
 - **No orchestration logic yet, by design**: `ToolRegistry` and `RAGService` are a deterministic *execution substrate* — they don't decide *when* to call `rag_search` vs. `youtube_transcript`, or chain tools together. That decision logic is explicitly Phase 4's job (LangGraph); Phase 3 only guarantees that once a tool is called, it behaves safely, predictably, and with clear, typed error reporting.
 
-**Configuration** (`.env` / `omniflow/config.py`): `EMBEDDING_MODEL_NAME`, `EMBEDDING_DEVICE`, `EMBEDDING_BATCH_SIZE`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_TOP_K`, `RAG_SIMILARITY_THRESHOLD`, `YOUTUBE_TRANSCRIPT_MAX_CHARS` — see `.env.example` for defaults.
+**Configuration** (`.env` / `backend/config.py`): `EMBEDDING_MODEL_NAME`, `EMBEDDING_DEVICE`, `EMBEDDING_BATCH_SIZE`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP`, `RAG_TOP_K`, `RAG_SIMILARITY_THRESHOLD`, `YOUTUBE_TRANSCRIPT_MAX_CHARS` — see `.env.example` for defaults.
 
 **Not yet wired to any HTTP route.** `ToolRegistry`, `RAGService`, and `RAGSearchTool` are fully implemented, tested, and usable programmatically, but no FastAPI endpoint currently exposes them (only `POST /ingest` exists as a live route) — that wiring is expected to arrive alongside Phase 4's orchestration layer.
 
@@ -114,23 +114,24 @@ In addition to Python packages, the following local tools are supported for full
 
 ### 1. Prerequisites
 - Python 3.11 or 3.12
-- pip package manager
+- [uv](https://docs.astral.sh/uv/) package manager
 - (Optional for OCR/Audio): Tesseract OCR and FFmpeg
 
-### 2. Create and Activate Virtual Environment
+### 2. Install Dependencies
+
+Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`. One
+command creates the virtual environment (`.venv`) and installs everything,
+including the CPU-only PyTorch build (see `pyproject.toml`'s
+`[tool.uv.sources]`):
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+uv sync
 ```
 
-### 3. Install Dependencies
+Run any command inside that environment with `uv run` (e.g. `uv run pytest
+-q`), or activate it directly with `source .venv/bin/activate`.
 
-```bash
-pip install -r requirements.txt
-```
-
-### 4. Configure Environment Variables
+### 3. Configure Environment Variables
 
 Create your `.env` file:
 ```bash
@@ -170,17 +171,17 @@ RAG_SIMILARITY_THRESHOLD=0.2
 YOUTUBE_TRANSCRIPT_MAX_CHARS=200000
 ```
 
-### 5. Run the Application
+### 4. Run the Application
 
 ```bash
-uvicorn omniflow.main:app --reload --host 127.0.0.1 --port 8000
+uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 - **Health Check**: [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
 - **Ingestion Endpoint**: `POST http://127.0.0.1:8000/ingest`
 - **Interactive OpenAPI Documentation**: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-### 6. Ingestion API Example
+### 5. Ingestion API Example
 
 Using `curl`:
 ```bash
@@ -195,14 +196,14 @@ curl -X POST http://127.0.0.1:8000/ingest \
   -F "files=@receipt.png"
 ```
 
-### 7. Phase 3 Tool + RAG Usage Example (programmatic, no HTTP route yet)
+### 6. Phase 3 Tool + RAG Usage Example (programmatic, no HTTP route yet)
 
 ```python
-from omniflow.rag.service import RAGService
-from omniflow.tools.registry import ToolRegistry
-from omniflow.tools.rag_search import RAGSearchTool
-from omniflow.tools.youtube import YouTubeTranscriptTool
-from omniflow.models.document import NormalizedDocument, SourceType, ExtractionMethod
+from backend.rag.service import RAGService
+from backend.tools.registry import ToolRegistry
+from backend.tools.rag_search import RAGSearchTool
+from backend.tools.youtube import YouTubeTranscriptTool
+from backend.models.document import NormalizedDocument, SourceType, ExtractionMethod
 
 rag_service = RAGService()
 registry = ToolRegistry()
@@ -223,7 +224,7 @@ print(output.status)     # "evidence_found" or "no_evidence" -- never a generate
 print(output.evidence)   # ranked, source-attributed RetrievedChunk list
 ```
 
-### 8. Run the Test Suite
+### 7. Run the Test Suite
 
 ```bash
 pytest -v
@@ -252,7 +253,7 @@ OMNIFLOW_RUN_MODEL_INTEGRATION_TESTS=1 pytest -k RealModel -v
 
 A single-service deployment: one Docker container runs the FastAPI backend
 and also serves the built React frontend from the same process/origin
-(see `omniflow/main.py` — `GET /` serves the built SPA only when
+(see `backend/main.py` — `GET /` serves the built SPA only when
 `APP_ENV=production` **and** the frontend has actually been built into
 `frontend/dist`; local/dev/test runs are unaffected and keep the existing
 JSON discovery response at `/`).

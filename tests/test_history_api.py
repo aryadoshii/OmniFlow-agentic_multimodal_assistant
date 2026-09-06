@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from omniflow.config import Settings, get_settings
-from omniflow.main import create_app
-from omniflow.services import history_store
+from backend.config import Settings, get_settings
+from backend.main import create_app
+from backend.services import history_store
 
 
 @pytest.fixture

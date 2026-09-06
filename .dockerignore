@@ -13,7 +13,7 @@ frontend/.env.*
 
 # Local conversation history (SQLite) -- regenerated fresh in the
 # container; a local dev history file is never baked into the image.
-omniflow_history.db
+database/*.db
 
 # Python
 __pycache__/

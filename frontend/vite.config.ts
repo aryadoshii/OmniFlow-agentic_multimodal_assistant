@@ -6,7 +6,7 @@ import { defineConfig } from 'vite'
 // Dev-only API proxy: the frontend always calls `${VITE_API_BASE_URL ?? '/api'}/...`
 // (see src/api/client.ts). In development, VITE_API_BASE_URL is unset, so
 // requests go to same-origin `/api/*`; this proxy forwards them to the
-// FastAPI backend (default http://127.0.0.1:8000, matching omniflow.config
+// FastAPI backend (default http://127.0.0.1:8000, matching backend.config
 // .Settings' HOST/PORT defaults) and strips the `/api` prefix, since the
 // backend's own routes (/query, /ingest, /health) are mounted at root. No
 // production URL is hardcoded anywhere -- a real deployment sets

@@ -1,0 +1,66 @@
+[project]
+name = "omniflow"
+version = "0.1.0"
+description = "OmniFlow: an agentic multimodal AI assistant (FastAPI + LangGraph backend)."
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # Phase 1 core
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+    "pydantic>=2.8.0,<3.0.0",
+    "pydantic-settings>=2.4.0,<3.0.0",
+    "python-dotenv>=1.0.0,<2.0.0",
+    # Phase 2 multimodal ingestion
+    "pymupdf>=1.24.0,<2.0.0",
+    "pytesseract>=0.3.10,<1.0.0",
+    "pillow>=10.0.0,<12.0.0",
+    "faster-whisper>=1.0.0,<2.0.0",
+    "python-multipart>=0.0.9,<1.0.0",
+    # Phase 3 tool + RAG
+    "numpy>=1.24.0,<3.0.0",
+    "faiss-cpu>=1.8.0,<2.0.0",
+    "sentence-transformers>=3.0.0,<7.0.0",
+    "youtube-transcript-api>=1.0.0,<2.0.0",
+    # Pulled in transitively by sentence-transformers/faster-whisper, but
+    # listed explicitly so the [tool.uv.sources] pin below (CPU-only wheel)
+    # actually applies -- uv only honors a source override for a package
+    # that is a first-class project dependency, not a purely transitive one.
+    "torch>=2.0.0,<3.0.0",
+    # Phase 4 LLM provider + orchestration
+    "google-genai>=1.0.0,<2.0.0",
+    "langgraph>=1.0.0,<2.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0,<10.0.0",
+    "httpx>=0.27.0,<1.0.0",
+    # Pinned to the exact minor line this project has been developed and
+    # validated against -- ruff's default (unconfigured) rule set has
+    # changed between minor versions (e.g. 0.16 default-enables additional
+    # SIM rules 0.15 did not), and this repo has no [tool.ruff] table
+    # pinning an explicit rule selection to insulate against that drift.
+    "ruff>=0.15.0,<0.16.0",
+]
+
+# This is an application (run in place via `uv run uvicorn backend.main:app`
+# / the Dockerfile's CMD), not a distributable library -- `package = false`
+# tells uv to manage the dependency environment (.venv, uv.lock) without
+# trying to build/install the `backend` directory itself as an installed
+# package. No [build-system] table is needed as a result.
+[tool.uv]
+package = false
+
+# sentence-transformers/faster-whisper pull in torch transitively. Without
+# this, uv's default resolution (like pip's) picks the CUDA-enabled torch
+# build -- several GB of unused GPU libraries -- even though the app only
+# ever runs embeddings/Whisper on CPU (EMBEDDING_DEVICE and WHISPER_DEVICE
+# both default to "cpu", see backend/config.py). This pins torch to the
+# same version uv would otherwise choose, just the CPU-only wheel.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

@@ -12,16 +12,16 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel
 
-from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
-from omniflow.exceptions import InvalidInputError, OrchestrationError
-from omniflow.graph import build_graph, run_graph
-from omniflow.graph.routing import route_after_check_clarity, route_after_route_next
-from omniflow.models.state import AgentState, WorkflowStatus
-from omniflow.models.trace import ToolExecutionTrace
-from omniflow.providers.base import BaseLLMProvider
-from omniflow.tools.base import BaseTool
-from omniflow.tools.registry import ToolRegistry
+from backend.agents.intent import IntentResult, IntentType
+from backend.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
+from backend.exceptions import InvalidInputError, OrchestrationError
+from backend.graph import build_graph, run_graph
+from backend.graph.routing import route_after_check_clarity, route_after_route_next
+from backend.models.state import AgentState, WorkflowStatus
+from backend.models.trace import ToolExecutionTrace
+from backend.providers.base import BaseLLMProvider
+from backend.tools.base import BaseTool
+from backend.tools.registry import ToolRegistry
 
 
 class _EchoInput(BaseModel):
@@ -215,12 +215,12 @@ class TestInitialStateAcceptance:
         assert result.session_id == "sess-42"
 
     def test_preserves_uploaded_and_normalized_document_fields(self) -> None:
-        from omniflow.models.document import (
+        from backend.models.document import (
             ExtractionMethod,
             NormalizedDocument,
             SourceType,
         )
-        from omniflow.models.request import UploadedInput
+        from backend.models.request import UploadedInput
 
         graph = build_graph()
         state = AgentState(
@@ -261,14 +261,14 @@ class TestPrepareContext:
     metadata-only fact would otherwise never reach the final answer."""
 
     def test_no_documents_is_a_noop(self) -> None:
-        from omniflow.graph.nodes import prepare_context
+        from backend.graph.nodes import prepare_context
 
         update = prepare_context(AgentState())
         assert "unified_context" not in update
 
     def test_content_included_in_unified_context(self) -> None:
-        from omniflow.graph.nodes import prepare_context
-        from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
+        from backend.graph.nodes import prepare_context
+        from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
 
         doc = NormalizedDocument(
             filename="report.pdf",
@@ -281,8 +281,8 @@ class TestPrepareContext:
         assert "Quarterly revenue rose 15%." in update["unified_context"]
 
     def test_audio_duration_metadata_reaches_unified_context(self) -> None:
-        from omniflow.graph.nodes import prepare_context
-        from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
+        from backend.graph.nodes import prepare_context
+        from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
 
         doc = NormalizedDocument(
             filename="call.mp3",
@@ -297,8 +297,8 @@ class TestPrepareContext:
         assert "duration_seconds" in update["unified_context"]
 
     def test_multiple_documents_each_carry_their_own_metadata(self) -> None:
-        from omniflow.graph.nodes import prepare_context
-        from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
+        from backend.graph.nodes import prepare_context
+        from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
 
         audio_doc = NormalizedDocument(
             filename="call.mp3",
@@ -555,18 +555,18 @@ class TestNoExternalCalls:
         explicitly meant to dispatch through, per Phase 4.4), but must never
         import a concrete tool implementation, RAGService/FAISS internals, or
         the Gemini SDK/provider directly."""
-        import omniflow.graph.builder as builder_module
-        import omniflow.graph.nodes as nodes_module
-        import omniflow.graph.routing as routing_module
+        import backend.graph.builder as builder_module
+        import backend.graph.nodes as nodes_module
+        import backend.graph.routing as routing_module
 
         forbidden = [
             "google.genai",
-            "omniflow.providers.gemini_provider",
-            "omniflow.tools.youtube",
-            "omniflow.tools.rag_search",
-            "omniflow.rag.vector_store",
-            "omniflow.rag.service",
-            "omniflow.rag.embeddings",
+            "backend.providers.gemini_provider",
+            "backend.tools.youtube",
+            "backend.tools.rag_search",
+            "backend.rag.vector_store",
+            "backend.rag.service",
+            "backend.rag.embeddings",
         ]
         for module in (builder_module, nodes_module, routing_module):
             with open(module.__file__, encoding="utf-8") as f:
@@ -580,27 +580,27 @@ class TestNoExternalCalls:
                     assert term not in line, f"Forbidden import '{term}' in {module.__file__}: {line!r}"
 
     def test_graph_package_only_imports_tool_registry_abstraction(self) -> None:
-        """Confirms the ONLY omniflow.tools import in the graph package is
+        """Confirms the ONLY backend.tools import in the graph package is
         the registry/base abstraction, never a concrete tool module."""
-        import omniflow.graph.builder as builder_module
-        import omniflow.graph.nodes as nodes_module
+        import backend.graph.builder as builder_module
+        import backend.graph.nodes as nodes_module
 
-        allowed_tools_imports = {"omniflow.tools.registry", "omniflow.tools.base"}
+        allowed_tools_imports = {"backend.tools.registry", "backend.tools.base"}
         for module in (builder_module, nodes_module):
             with open(module.__file__, encoding="utf-8") as f:
                 for line in f.readlines():
                     stripped = line.strip()
-                    if "omniflow.tools" in stripped and (
+                    if "backend.tools" in stripped and (
                         stripped.startswith("import ") or stripped.startswith("from ")
                     ):
                         assert any(allowed in stripped for allowed in allowed_tools_imports), (
-                            f"Unexpected omniflow.tools import in {module.__file__}: {stripped!r}"
+                            f"Unexpected backend.tools import in {module.__file__}: {stripped!r}"
                         )
 
     def test_build_graph_makes_no_network_calls(self) -> None:
         """Building and running the default graph must never touch a mocked
         Gemini client -- proving no accidental LLM call path exists yet."""
-        with patch("omniflow.providers.gemini_provider.genai") as mock_genai:
+        with patch("backend.providers.gemini_provider.genai") as mock_genai:
             graph = build_graph()
             run_graph(AgentState(original_request="anything"), compiled_graph=graph)
             mock_genai.Client.assert_not_called()
@@ -680,7 +680,7 @@ class TestErrorHandlingBoundary:
         # The graph must be built INSIDE the patch context: add_node() binds
         # the function reference at build time, so patching after build_graph()
         # would not affect the already-compiled graph.
-        with patch("omniflow.graph.nodes.prepare_context", side_effect=RuntimeError("boom")):
+        with patch("backend.graph.nodes.prepare_context", side_effect=RuntimeError("boom")):
             graph = build_graph()
             with pytest.raises(OrchestrationError) as exc_info:
                 run_graph(AgentState(), compiled_graph=graph)
@@ -690,7 +690,7 @@ class TestErrorHandlingBoundary:
         """A future node raising an existing OmniFlow domain exception must
         not be flattened into a generic OrchestrationError."""
         with patch(
-            "omniflow.graph.nodes.prepare_context",
+            "backend.graph.nodes.prepare_context",
             side_effect=InvalidInputError("simulated future node validation failure"),
         ):
             graph = build_graph()

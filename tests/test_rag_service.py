@@ -17,15 +17,15 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from omniflow.exceptions import (
+from backend.exceptions import (
     EmbeddingGenerationError,
     InvalidInputError,
     RAGRetrievalError,
 )
-from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
-from omniflow.rag.embeddings import EmbeddingService
-from omniflow.rag.service import RAGResult, RAGService, RetrievedChunk
-from omniflow.rag.vector_store import FAISSVectorStore
+from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
+from backend.rag.embeddings import EmbeddingService
+from backend.rag.service import RAGResult, RAGService, RetrievedChunk
+from backend.rag.vector_store import FAISSVectorStore
 
 DIM = 4
 
@@ -246,7 +246,7 @@ class TestRetrieveRelevance:
         assert len(result.results) <= 2
 
     def test_default_top_k_and_threshold_come_from_settings(self) -> None:
-        from omniflow.config import get_settings
+        from backend.config import get_settings
 
         settings = get_settings()
         service = _standard_service()

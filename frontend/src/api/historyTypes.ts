@@ -47,4 +47,6 @@ export interface StoredAssistantContent {
   errors: string[]
   execution_trace: unknown
   normalized_documents: unknown[]
+  evidence?: unknown[]
+  cross_source_analysis?: unknown
 }

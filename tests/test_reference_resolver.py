@@ -4,12 +4,12 @@ No LLM, no mocking -- resolve_unambiguous_references() and
 build_document_catalog() are pure functions over AgentState.
 """
 
-from omniflow.agents.reference_resolver import (
+from backend.agents.reference_resolver import (
     build_document_catalog,
     resolve_unambiguous_references,
 )
-from omniflow.models.document import ExtractionMethod, NormalizedDocument, SourceType
-from omniflow.models.state import AgentState
+from backend.models.document import ExtractionMethod, NormalizedDocument, SourceType
+from backend.models.state import AgentState
 
 
 def _doc(

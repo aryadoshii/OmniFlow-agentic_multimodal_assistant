@@ -6,19 +6,19 @@ from unittest.mock import MagicMock
 from PIL import Image
 import pymupdf
 import pytest
-from omniflow.exceptions import (
+from backend.exceptions import (
     InvalidInputError,
     ProcessingFailureError,
     TranscriptionError,
     UnsupportedFileError,
 )
-from omniflow.models.document import ExtractionMethod, SourceType
-from omniflow.processors.audio_processor import AudioProcessor
-from omniflow.processors.image_processor import ImageProcessor
-from omniflow.processors.pdf_processor import PDFProcessor
-from omniflow.processors.text_processor import TextProcessor
-from omniflow.services.ocr_service import OCRService
-from omniflow.services.whisper_service import WhisperService
+from backend.models.document import ExtractionMethod, SourceType
+from backend.processors.audio_processor import AudioProcessor
+from backend.processors.image_processor import ImageProcessor
+from backend.processors.pdf_processor import PDFProcessor
+from backend.processors.text_processor import TextProcessor
+from backend.services.ocr_service import OCRService
+from backend.services.whisper_service import WhisperService
 
 
 # ============================================================================

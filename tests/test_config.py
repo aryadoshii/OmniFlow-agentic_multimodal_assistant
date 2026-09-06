@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from omniflow import config
-from omniflow.config import Settings
+from backend import config
+from backend.config import Settings
 
 
 def test_default_settings() -> None:
@@ -59,7 +59,7 @@ def test_secret_key_masking(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_env_file_is_anchored_to_project_root_not_process_cwd() -> None:
     """A relative env_file (e.g. ".env") resolves against the process's
-    current working directory, so `uvicorn omniflow.main:app --reload`
+    current working directory, so `uvicorn backend.main:app --reload`
     silently finds no .env (pydantic-settings does not error on a missing
     file) whenever launched from anywhere other than the exact repo root
     -- surfacing as a false "GEMINI_API_KEY is not configured" even when a
