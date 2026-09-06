@@ -1,49 +1,51 @@
 .app-shell {
   min-height: 100svh;
   display: flex;
-  flex-direction: column;
-}
-
-.app-shell__header {
-  border-bottom: 1px solid var(--border);
   background: var(--bg);
 }
 
-.app-shell__header-inner {
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 20px 24px;
-}
-
-.app-shell__title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  letter-spacing: -0.3px;
-  color: var(--text-h);
-}
-
-.app-shell__subtitle {
-  margin: 4px 0 0;
-  font-size: 14px;
-  color: var(--text);
-}
-
 .app-shell__main {
+  position: relative;
   flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  isolation: isolate;
+}
+
+/* Subtle ambient wash behind the main content only -- two soft, fixed,
+   non-interactive brand-tinted glows. Intentionally faint: this reads as
+   depth/atmosphere, not decoration, and never competes with content. */
+.app-shell__main::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(560px 420px at 12% -6%, rgba(244, 164, 96, 0.16), transparent 60%),
+    radial-gradient(680px 520px at 96% 18%, rgba(227, 83, 54, 0.07), transparent 55%);
+}
+
+.app-shell__main-inner {
   width: 100%;
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 24px;
-  box-sizing: border-box;
+  max-width: 960px;
+  padding: 56px 40px 88px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 48px;
 }
 
-@media (max-width: 600px) {
-  .app-shell__header-inner,
-  .app-shell__main {
-    padding: 16px;
+@media (max-width: 900px) {
+  .app-shell__main-inner {
+    padding: 20px 20px 56px;
+    gap: 36px;
+  }
+}
+
+@media (max-width: 520px) {
+  .app-shell__main-inner {
+    padding: 16px 14px 48px;
+    gap: 30px;
   }
 }

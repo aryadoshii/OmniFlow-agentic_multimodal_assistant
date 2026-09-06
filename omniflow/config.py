@@ -1,16 +1,25 @@
 """Centralized configuration management for OmniFlow using Pydantic Settings."""
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Anchored to the project root (this file's parent's parent) rather than a
+# bare ".env" -- a relative path is resolved against the process's current
+# working directory, so it silently finds nothing (pydantic-settings does
+# not error on a missing env file) whenever uvicorn is launched from
+# anywhere other than the exact repo root. An absolute path makes local
+# .env loading independent of where the process is started from.
+_PROJECT_ROOT_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables and .env file."""
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_PROJECT_ROOT_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )

@@ -19,12 +19,12 @@ export function ConversationTurnCard({ turn, isLatest }: ConversationTurnCardPro
         </span>
         <p className="conversation-turn__query-text">{turn.displayQuery}</p>
         {turn.fileNames.length > 0 && (
-          <p className="conversation-turn__query-files">
-            Attached: {turn.fileNames.join(', ')}
-          </p>
+          <p className="conversation-turn__query-files">Attached: {turn.fileNames.join(', ')}</p>
         )}
       </header>
-      <ResponseArea status={turn.status} response={turn.response} error={turn.error} />
+      <div className="conversation-turn__answer">
+        <ResponseArea status={turn.status} response={turn.response} error={turn.error} />
+      </div>
     </article>
   )
 }

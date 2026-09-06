@@ -1,17 +1,20 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AppShell } from './components/AppShell'
 import { ConversationTurnCard } from './components/ConversationTurnCard'
 import { EmptyState } from './components/EmptyState'
-import { FileUploadArea } from './components/FileUploadArea'
-import { QueryInput } from './components/QueryInput'
-import { UploadedFileList } from './components/UploadedFileList'
+import { Hero } from './components/Hero'
+import { Workspace } from './components/Workspace'
 import { ApiError, queryAgent } from './api/client'
+import { createConversation, deleteConversation, getConversation, listConversations, saveTurn } from './api/historyClient'
+import type { ConversationSummary } from './api/historyTypes'
+import type { OmniFlowResponse } from './api/types'
 import { buildClarificationFollowUp } from './lib/clarification'
 import type { ConversationTurn } from './lib/conversation'
 import { findRejectedFilename } from './lib/errorDisplay'
 import { createStagedFile } from './lib/files'
 import type { StagedFile } from './lib/files'
 import { generateId } from './lib/id'
+import { conversationDetailToTurns, deriveConversationTitle } from './lib/history'
 import './App.css'
 
 function toApiError(error: unknown): ApiError {
@@ -44,9 +47,33 @@ function App() {
   // losing the original question and context.
   const [pendingClarification, setPendingClarification] = useState<PendingClarification | null>(null)
 
+  // SQLite-backed conversation history (sidebar). Purely additive to the
+  // above: it persists/restores turns, but never feeds back into what
+  // gets sent to /query.
+  const [conversations, setConversations] = useState<ConversationSummary[]>([])
+  const [isHistoryLoading, setIsHistoryLoading] = useState(true)
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
   const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null
   const isSubmitting = lastTurn?.status === 'loading'
   const isAwaitingClarification = pendingClarification !== null
+
+  useEffect(() => {
+    refreshHistory()
+  }, [])
+
+  async function refreshHistory() {
+    try {
+      const list = await listConversations()
+      setConversations(list)
+    } catch {
+      // History is a convenience feature -- a failure to load it must
+      // never block the actual query workspace from working.
+    } finally {
+      setIsHistoryLoading(false)
+    }
+  }
 
   function handleFilesSelected(newFiles: File[]) {
     setFiles((prev) => [...prev, ...newFiles.map(createStagedFile)])
@@ -54,6 +81,73 @@ function App() {
 
   function handleRemoveFile(id: string) {
     setFiles((prev) => prev.filter((staged) => staged.id !== id))
+  }
+
+  function handleNewConversation() {
+    setTurns([])
+    setFiles([])
+    setPendingClarification(null)
+    setActiveConversationId(null)
+    setIsSidebarOpen(false)
+  }
+
+  async function handleSelectConversation(conversationId: string) {
+    setIsSidebarOpen(false)
+    try {
+      const detail = await getConversation(conversationId)
+      setTurns(conversationDetailToTurns(detail))
+      setFiles([])
+      setPendingClarification(null)
+      setActiveConversationId(conversationId)
+    } catch {
+      // Leave the current workspace untouched if a restore fails.
+    }
+  }
+
+  async function handleDeleteConversation(conversationId: string) {
+    const wasActive = conversationId === activeConversationId
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId))
+    if (wasActive) {
+      handleNewConversation()
+    }
+    try {
+      await deleteConversation(conversationId)
+    } catch {
+      // The list already reflects the deletion optimistically; a stale
+      // background failure here isn't worth surfacing over the workspace.
+      refreshHistory()
+    }
+  }
+
+  async function persistTurn(query: string, response: OmniFlowResponse) {
+    try {
+      let conversationId = activeConversationId
+      if (!conversationId) {
+        const created = await createConversation(deriveConversationTitle(query))
+        conversationId = created.id
+        setActiveConversationId(conversationId)
+        setConversations((prev) => [created, ...prev])
+      }
+
+      const summary = await saveTurn(conversationId, {
+        query,
+        status: response.status,
+        answer: response.answer,
+        warnings: response.warnings,
+        errors: response.errors,
+        execution_trace: response.execution_trace,
+        normalized_documents: response.normalized_documents,
+        attachments: files.map((staged) => ({ filename: staged.file.name, mime_type: staged.file.type || 'application/octet-stream' })),
+      })
+
+      setConversations((prev) => {
+        const withoutCurrent = prev.filter((c) => c.id !== summary.id)
+        return [summary, ...withoutCurrent]
+      })
+    } catch {
+      // History persistence is best-effort -- the live answer already
+      // rendered successfully regardless of whether saving it succeeded.
+    }
   }
 
   async function handleSubmit(text: string) {
@@ -98,6 +192,7 @@ function App() {
           ? { originalQuery: sentQuery, question: response.clarification_prompt }
           : null,
       )
+      persistTurn(text, response)
     } catch (caught) {
       const error = toApiError(caught)
       setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, status: 'error', error } : turn)))
@@ -116,18 +211,29 @@ function App() {
   }
 
   return (
-    <AppShell>
-      <section className="app__panel" aria-label="Query and file input">
-        <FileUploadArea onFilesSelected={handleFilesSelected} disabled={isSubmitting} />
-        <UploadedFileList files={files} onRemove={handleRemoveFile} disabled={isSubmitting} />
-        <QueryInput
-          onSubmit={handleSubmit}
-          disabled={isSubmitting}
-          mode={isAwaitingClarification ? 'clarify' : 'ask'}
-          clarificationQuestion={pendingClarification?.question}
-        />
-      </section>
-      <section className="app__panel app__conversation" aria-label="Agent responses" aria-live="polite">
+    <AppShell
+      conversations={conversations}
+      activeConversationId={activeConversationId}
+      isHistoryLoading={isHistoryLoading}
+      onSelectConversation={handleSelectConversation}
+      onNewConversation={handleNewConversation}
+      onDeleteConversation={handleDeleteConversation}
+      isSidebarOpen={isSidebarOpen}
+      onCloseSidebar={() => setIsSidebarOpen(false)}
+    >
+      <Hero onOpenSidebar={() => setIsSidebarOpen(true)} />
+
+      <Workspace
+        files={files}
+        onFilesSelected={handleFilesSelected}
+        onRemoveFile={handleRemoveFile}
+        onSubmit={handleSubmit}
+        disabled={isSubmitting}
+        mode={isAwaitingClarification ? 'clarify' : 'ask'}
+        clarificationQuestion={pendingClarification?.question}
+      />
+
+      <section className="app__conversation" aria-label="Agent responses" aria-live="polite">
         {turns.length === 0 ? (
           <EmptyState />
         ) : (

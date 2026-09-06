@@ -87,3 +87,6 @@ model_cache/
 # descend into it to apply the second rule.
 !frontend/src/lib/
 !frontend/src/lib/**
+
+# Local conversation history (SQLite) -- machine-local data, never committed.
+omniflow_history.db

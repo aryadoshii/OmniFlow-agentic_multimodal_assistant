@@ -8,8 +8,15 @@ from omniflow.main import create_app
 
 @pytest.fixture
 def test_settings() -> Settings:
-    """Fixture providing isolated test settings."""
+    """Fixture providing isolated test settings.
+
+    _env_file=None disables dotenv loading for this instance so a real
+    local .env (e.g. a developer's own GEMINI_API_KEY) never leaks into
+    test settings -- tests that rely on GEMINI_API_KEY being unset must
+    stay hermetic regardless of what exists on disk outside the repo.
+    """
     return Settings(
+        _env_file=None,
         APP_ENV="test",
         LOG_LEVEL="WARNING",
         HOST="127.0.0.1",

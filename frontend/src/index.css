@@ -1,36 +1,74 @@
+/*
+ * OmniFlow design system -- Burnt Sienna palette.
+ * Core hues: primary #E35336, cream #F5F5DC, warm orange #F4A460, dark
+ * brown #A0522D. Everything else (surfaces, text, borders) is a warm
+ * neutral scale built around cream/brown, not generic gray -- the brand
+ * colors are reserved for primary actions, active states, and accents,
+ * never used to tint the whole interface.
+ */
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #7c3aed;
-  --accent-bg: rgba(124, 58, 237, 0.1);
-  --accent-border: rgba(124, 58, 237, 0.5);
+  /* Brand */
+  --brand: #e35336;
+  --brand-dark: #c23f26;
+  --brand-light: #f4a460;
+  --brand-deep: #a0522d;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Warm neutral surfaces (cream-derived, not gray) -- --bg is the
+     specified #F5F5DC cream itself, very slightly desaturated for
+     comfortable body-text contrast at large surface area. */
+  --bg: #f6f4e6;
+  --bg-inset: #f0ecdc;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --sidebar-bg: #2a1d16;
+  --sidebar-bg-raised: #34241a;
+  --sidebar-border: rgba(245, 245, 220, 0.1);
+  --sidebar-text: #f1e9de;
+  --sidebar-text-muted: rgba(241, 233, 222, 0.6);
 
-  font: 16px/145% var(--sans);
-  color-scheme: light dark;
-  color: var(--text-h);
+  /* Typography */
+  --text: #4a3f36;
+  --text-muted: #8a7b6c;
+  --text-h: #241811;
+  --text-on-brand: #fffaf5;
+
+  /* Borders / shadows -- used sparingly: most surfaces in the main content
+     area are borderless/low-chrome by design, these remain for the
+     sidebar, floating composer, and true overlays only. */
+  --border: #e8ddcd;
+  --border-strong: #d9c9b0;
+  --border-soft: rgba(160, 82, 45, 0.12);
+  --shadow-sm: 0 1px 2px rgba(36, 24, 17, 0.06);
+  --shadow-md: 0 4px 16px rgba(36, 24, 17, 0.08);
+  --shadow-lg: 0 12px 32px rgba(36, 24, 17, 0.12);
+  --shadow-float: 0 1px 2px rgba(36, 24, 17, 0.04), 0 12px 28px rgba(36, 24, 17, 0.07);
+
+  /* Status */
+  --success: #3f7a52;
+  --success-bg: #eaf3ec;
+  --warning: #a0522d;
+  --warning-bg: #faf0e4;
+  --error: #c23f26;
+  --error-bg: #fbeae6;
+
+  /* Fonts */
+  --font-sans: 'Inter', system-ui, 'Segoe UI', Roboto, sans-serif;
+  --font-serif: 'Source Serif 4', Georgia, 'Times New Roman', serif;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  font: 15px/1.55 var(--font-sans);
+  color-scheme: light;
+  color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #a78bfa;
-    --accent-bg: rgba(167, 139, 250, 0.15);
-    --accent-border: rgba(167, 139, 250, 0.5);
-  }
 }
 
 * {
@@ -39,8 +77,57 @@
 
 body {
   margin: 0;
+  background: var(--bg);
 }
 
 #root {
   min-height: 100svh;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: var(--text-h);
+  margin: 0;
+}
+
+button,
+input,
+textarea {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::selection {
+  background: rgba(227, 83, 54, 0.18);
+}
+
+/* Thin, warm-toned scrollbars -- used inside the sidebar and long panels. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

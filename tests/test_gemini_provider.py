@@ -21,7 +21,10 @@ from omniflow.providers.gemini_provider import GeminiProvider
 
 
 def _settings(api_key: str | None = "fake-test-key", model: str = "gemini-2.5-flash") -> Settings:
-    kwargs = {"LLM_MODEL": model}
+    # _env_file=None: a real local .env (e.g. a developer's own
+    # GEMINI_API_KEY) must never leak into this "missing key" fixture and
+    # falsely satisfy the configuration check.
+    kwargs = {"LLM_MODEL": model, "_env_file": None}
     if api_key is not None:
         kwargs["GEMINI_API_KEY"] = api_key
     return Settings(**kwargs)

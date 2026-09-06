@@ -7,20 +7,42 @@ test_ingestion_api.py; these tests focus on the new endpoint's wiring:
 request handling, graph execution, and response shaping.
 """
 
+import json
 from unittest.mock import MagicMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import Plan, PlanStep
+from omniflow.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
 from omniflow.api.routes.agent import (
     get_embedding_service,
     get_llm_provider,
     get_rag_service,
 )
+from omniflow.config import Settings
 from omniflow.providers.base import BaseLLMProvider
 from omniflow.rag.embeddings import EmbeddingService
 from omniflow.rag.service import RAGResult
+
+
+def _plan_to_wire_schema(plan: Plan) -> _PlanSchema:
+    """Converts a Plan into the Gemini-facing wire shape (inputs as a JSON
+    string) a real GeminiProvider actually returns -- see planner.py's
+    _PlanSchema docstring."""
+    return _PlanSchema(
+        steps=[
+            _PlanStepSchema(
+                step_id=step.step_id,
+                tool_name=step.tool_name,
+                purpose=step.purpose,
+                inputs=json.dumps(step.inputs),
+                expected_result=step.expected_result,
+                depends_on=step.depends_on,
+            )
+            for step in plan.steps
+        ]
+    )
 
 
 class _FakeLLMProvider(BaseLLMProvider):
@@ -36,11 +58,18 @@ class _FakeLLMProvider(BaseLLMProvider):
         return self._text_output
 
     def generate_structured(self, prompt, response_model, system_instruction=None):
-        value = self._structured_outputs[response_model]
+        # The planner requests _PlanSchema (the Gemini-safe wire shape),
+        # not Plan directly -- see planner.py's _PlanSchema docstring. Test
+        # fixtures declare their canned output as a plain Plan for
+        # readability, so translate it here rather than in every test.
+        lookup_model = Plan if response_model is _PlanSchema else response_model
+        value = self._structured_outputs[lookup_model]
         if isinstance(value, list):
-            idx = self._call_counts.get(response_model, 0)
-            self._call_counts[response_model] = idx + 1
-            return value[min(idx, len(value) - 1)]
+            idx = self._call_counts.get(lookup_model, 0)
+            self._call_counts[lookup_model] = idx + 1
+            value = value[min(idx, len(value) - 1)]
+        if lookup_model is Plan and response_model is _PlanSchema:
+            return _plan_to_wire_schema(value)
         return value
 
 
@@ -360,10 +389,19 @@ class TestMissingGeminiConfiguration:
     test in this file."""
 
     def test_missing_gemini_api_key_returns_clean_configuration_error(
-        self, client: TestClient
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         client.app.dependency_overrides[get_rag_service] = lambda: MagicMock()
-        # get_llm_provider is deliberately NOT overridden here.
+        # get_llm_provider is deliberately NOT overridden here -- it calls
+        # GeminiProvider() with no args, which falls back to the process's
+        # real get_settings(). _env_file=None keeps this hermetic against
+        # a real local .env (e.g. a developer's own GEMINI_API_KEY) that
+        # would otherwise satisfy the configuration check and defeat this
+        # test's whole purpose.
+        monkeypatch.setattr(
+            "omniflow.providers.gemini_provider.get_settings",
+            lambda: Settings(_env_file=None),
+        )
 
         response = client.post("/query", data={"query": "Hello"})
 

@@ -1,7 +1,10 @@
 """Tests for centralized configuration management."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
+from omniflow import config
 from omniflow.config import Settings
 
 
@@ -52,3 +55,38 @@ def test_secret_key_masking(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.gemini_api_key.get_secret_value() == test_key
     assert test_key not in str(settings.gemini_api_key)
     assert test_key not in repr(settings.gemini_api_key)
+
+
+def test_env_file_is_anchored_to_project_root_not_process_cwd() -> None:
+    """A relative env_file (e.g. ".env") resolves against the process's
+    current working directory, so `uvicorn omniflow.main:app --reload`
+    silently finds no .env (pydantic-settings does not error on a missing
+    file) whenever launched from anywhere other than the exact repo root
+    -- surfacing as a false "GEMINI_API_KEY is not configured" even when a
+    real .env with a real key exists at the project root. The configured
+    env_file must instead be an absolute path anchored to the project
+    root, independent of cwd.
+    """
+    project_root = Path(config.__file__).resolve().parent.parent
+    assert Settings.model_config["env_file"] == project_root / ".env"
+    assert Path(Settings.model_config["env_file"]).is_absolute()
+
+
+def test_settings_loads_regardless_of_process_cwd(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Simulates uvicorn being launched from a directory other than the
+    repo root. A real OS environment variable (as Docker/Render always
+    supply, and as a correctly-anchored .env load would also produce)
+    must still be picked up -- this would have appeared to work even with
+    the old relative-path bug, but guards against a regression that
+    breaks environment-variable loading entirely while "fixing" the path.
+    """
+    other_cwd = tmp_path / "somewhere" / "else"
+    other_cwd.mkdir(parents=True)
+    monkeypatch.chdir(other_cwd)
+    monkeypatch.setenv("GEMINI_API_KEY", "test-non-secret-placeholder-key")
+
+    settings = Settings()
+    assert settings.gemini_api_key is not None
+    assert settings.gemini_api_key.get_secret_value() == "test-non-secret-placeholder-key"

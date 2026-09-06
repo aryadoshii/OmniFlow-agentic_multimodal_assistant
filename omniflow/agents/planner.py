@@ -20,7 +20,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from omniflow.agents.intent import IntentResult
-from omniflow.exceptions import OrchestrationError
+from omniflow.exceptions import ExternalProviderError, OrchestrationError
 from omniflow.providers.base import BaseLLMProvider
 from omniflow.tools.registry import ToolRegistry
 
@@ -55,6 +55,86 @@ class Plan(BaseModel):
     steps: list[PlanStep] = Field(default_factory=list)
 
 
+class _PlanStepSchema(BaseModel):
+    """Gemini-facing wire schema for a single plan step.
+
+    Identical to PlanStep except ``inputs`` is a JSON-object-encoded
+    *string* rather than ``dict[str, Any]``. An open ``dict[str, Any]``
+    field compiles to a JSON schema with ``additionalProperties``, which
+    the Gemini API's structured-output schema translator rejects outright
+    (``ValueError: additionalProperties is not supported in the Gemini
+    API.``) -- this is a local, pre-request failure in google-genai's own
+    schema-building code, not something any retry or error-handling
+    change in GeminiProvider could address. Encoding ``inputs`` as a
+    string sidesteps the unsupported schema shape while keeping the LLM's
+    actual output (a JSON object) unchanged; it is parsed back into a
+    real dict in ``_to_plan`` immediately after generation, so nothing
+    outside this module ever sees this intermediate representation.
+    """
+
+    step_id: int = Field(..., ge=0)
+    tool_name: str | None = Field(default=None)
+    purpose: str
+    inputs: str = Field(
+        default="{}",
+        description="A JSON object encoded as a string, e.g. "
+        '\'{"document_id": "abc123"}\' or \'{}\' if this step needs no inputs.',
+    )
+    expected_result: str
+    depends_on: int | None = Field(default=None)
+
+
+class _PlanSchema(BaseModel):
+    """Gemini-facing wire schema for Plan -- see _PlanStepSchema."""
+
+    steps: list[_PlanStepSchema] = Field(default_factory=list)
+
+
+def _to_plan(raw: _PlanSchema) -> Plan:
+    """Converts the Gemini wire schema into the real, application-facing Plan.
+
+    Raises:
+        ExternalProviderError: If a step's ``inputs`` string is not valid
+                                JSON, or does not decode to a JSON object --
+                                the same failure category GeminiProvider
+                                already raises for unvalidatable structured
+                                output.
+    """
+    steps = []
+    for raw_step in raw.steps:
+        try:
+            inputs = json.loads(raw_step.inputs)
+        except json.JSONDecodeError as exc:
+            raise ExternalProviderError(
+                "Gemini's response could not be validated into Plan.",
+                details={
+                    "reason": "invalid_structured_output",
+                    "response_model": "Plan",
+                    "step_id": str(raw_step.step_id),
+                },
+            ) from exc
+        if not isinstance(inputs, dict):
+            raise ExternalProviderError(
+                "Gemini's response could not be validated into Plan.",
+                details={
+                    "reason": "invalid_structured_output",
+                    "response_model": "Plan",
+                    "step_id": str(raw_step.step_id),
+                },
+            )
+        steps.append(
+            PlanStep(
+                step_id=raw_step.step_id,
+                tool_name=raw_step.tool_name,
+                purpose=raw_step.purpose,
+                inputs=inputs,
+                expected_result=raw_step.expected_result,
+                depends_on=raw_step.depends_on,
+            )
+        )
+    return Plan(steps=steps)
+
+
 _PLANNER_SYSTEM_INSTRUCTION = """\
 You are the planning component of a deterministic multimodal assistant. \
 Given a classified intent and a catalog of tools that ACTUALLY EXIST, \
@@ -77,6 +157,8 @@ whose transcript is not already ingested as a document.
 - Each step's purpose and expected_result must be concrete and specific to \
 this request, not generic placeholders.
 - depends_on must reference an earlier step_id, or be null.
+- inputs must be a JSON object ENCODED AS A STRING (e.g. '{"document_id": \
+"abc123"}' or '{}' if this step needs no inputs) -- not a nested JSON object.
 
 REPLANNING: If "Execution history so far" below is non-empty, you are being \
 asked to replan after observing the result(s) of prior tool call(s) -- this \
@@ -181,9 +263,10 @@ def create_plan(
         len(tool_catalog),
         bool(execution_history),
     )
-    plan = llm_provider.generate_structured(
-        prompt, Plan, system_instruction=_PLANNER_SYSTEM_INSTRUCTION
+    raw_plan = llm_provider.generate_structured(
+        prompt, _PlanSchema, system_instruction=_PLANNER_SYSTEM_INSTRUCTION
     )
+    plan = _to_plan(raw_plan)
 
     _validate_plan_tools(plan, tool_registry)
 

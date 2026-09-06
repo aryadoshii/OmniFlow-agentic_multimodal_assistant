@@ -1,9 +1,12 @@
+import { useState } from 'react'
+import { ChevronDown, CircleAlert, CircleCheck, TriangleAlert } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { ApiError } from '../api/client'
 import type { OmniFlowResponse } from '../api/types'
 import { describeApiError } from '../lib/errorDisplay'
-import { describeTraceStep } from '../lib/traceDisplay'
+import { AgentTrace } from './AgentTrace'
+import { ProcessedDocuments } from './ProcessedDocuments'
 import './ResponseArea.css'
 
 interface ResponseAreaProps {
@@ -18,7 +21,7 @@ export function ResponseArea({ status, response, error }: ResponseAreaProps) {
     return (
       <div className="response-area response-area--loading" role="status" aria-live="polite">
         <span className="response-area__spinner" aria-hidden="true" />
-        <p>Running the agent…</p>
+        <p>OmniFlow is thinking…</p>
       </div>
     )
   }
@@ -26,9 +29,12 @@ export function ResponseArea({ status, response, error }: ResponseAreaProps) {
   if (status === 'error' && error) {
     const { title, message } = describeApiError(error)
     return (
-      <div className="response-area response-area--error" role="alert">
-        <p className="response-area__error-title">{title}</p>
-        <p>{message}</p>
+      <div className="response-area response-area--top-error" role="alert">
+        <p className="response-area__error-title">
+          <CircleAlert size={16} /> {title}
+        </p>
+        <p className="response-area__error-message">{message}</p>
+        <ErrorDetails code={error.code} details={error.details} />
       </div>
     )
   }
@@ -40,30 +46,50 @@ export function ResponseArea({ status, response, error }: ResponseAreaProps) {
   return null
 }
 
+function ErrorDetails({ code, details }: { code: string; details: Record<string, unknown> }) {
+  const [isOpen, setIsOpen] = useState(false)
+  const hasDetails = Object.keys(details).length > 0
+  if (!hasDetails) return null
+
+  return (
+    <div className="response-area__error-details">
+      <button type="button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen}>
+        Technical details ({code})
+        <ChevronDown size={13} className={isOpen ? 'response-area__chevron--open' : ''} />
+      </button>
+      {isOpen && <pre>{JSON.stringify(details, null, 2)}</pre>}
+    </div>
+  )
+}
+
 function SuccessResponse({ data }: { data: OmniFlowResponse }) {
   const isAwaitingClarification = data.status === 'awaiting_clarification'
+  const isFailed = data.status === 'failed'
 
   return (
     <div className="response-area response-area--success">
       <div className="response-area__meta">
+        <span className="response-area__brand">OmniFlow</span>
         <StatusBadge status={data.status} />
         {data.execution_trace?.total_duration_ms != null && (
           <span className="response-area__duration">
-            {data.execution_trace.total_duration_ms.toFixed(0)} ms
+            {(data.execution_trace.total_duration_ms / 1000).toFixed(1)}s
           </span>
         )}
       </div>
 
       {data.clarification_needed && data.clarification_prompt && (
         <div className="response-area__clarification" role="status">
-          <p className="response-area__clarification-title">Clarification needed</p>
+          <p className="response-area__clarification-title">
+            <TriangleAlert size={14} /> Clarification needed
+          </p>
           <p>{data.clarification_prompt}</p>
           <p className="response-area__clarification-hint">Answer below to continue.</p>
         </div>
       )}
 
       {data.answer && (
-        <div className="response-area__answer">
+        <div className="response-area__answer markdown">
           {/* GFM (remark-gfm) enables tables/strikethrough/autolinks --
               comparison-style answers (e.g. "compare this audio with the
               PDF") commonly come back as a markdown table, which would
@@ -77,71 +103,68 @@ function SuccessResponse({ data }: { data: OmniFlowResponse }) {
       )}
 
       {data.errors.length > 0 && (
-        <details className="response-area__section" open>
-          <summary>Errors ({data.errors.length})</summary>
-          <ul>
-            {data.errors.map((message, index) => (
-              <li key={index}>{message}</li>
-            ))}
-          </ul>
-        </details>
+        <CollapsibleSection
+          title={`Errors (${data.errors.length})`}
+          tone="error"
+          defaultOpen={isFailed}
+          items={data.errors}
+        />
       )}
 
       {data.warnings.length > 0 && (
-        <details className="response-area__section">
-          <summary>Warnings ({data.warnings.length})</summary>
-          <ul>
-            {data.warnings.map((message, index) => (
-              <li key={index}>{message}</li>
-            ))}
-          </ul>
-        </details>
+        <CollapsibleSection title={`Warnings (${data.warnings.length})`} tone="warning" items={data.warnings} />
       )}
 
-      {data.normalized_documents.length > 0 && (
-        <details className="response-area__section">
-          <summary>Processed documents ({data.normalized_documents.length})</summary>
-          <ul>
-            {data.normalized_documents.map((doc) => (
-              <li key={doc.id}>
-                <strong>{doc.filename}</strong> — {doc.source_type} ({doc.extraction_method})
-                {doc.warnings.length > 0 && (
-                  <span className="response-area__doc-warning"> · {doc.warnings.join('; ')}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
+      <ProcessedDocuments documents={data.normalized_documents} />
 
-      {data.execution_trace && data.execution_trace.steps.length > 0 && (
-        <details className="response-area__section">
-          <summary>How the agent got here ({data.execution_trace.steps.length} steps)</summary>
-          <ol>
-            {data.execution_trace.steps.map((step, index) => {
-              const { label, group } = describeTraceStep(step)
-              return (
-                <li
-                  key={index}
-                  className={`response-area__trace-step response-area__trace-step--${step.status} response-area__trace-step--${group}`}
-                >
-                  {label} — {step.status}
-                  {step.duration_ms != null ? ` · ${step.duration_ms.toFixed(1)} ms` : ''}
-                  {step.error_message ? `: ${step.error_message}` : ''}
-                </li>
-              )
-            })}
-          </ol>
-        </details>
+      {data.execution_trace && <AgentTrace trace={data.execution_trace} />}
+    </div>
+  )
+}
+
+function CollapsibleSection({
+  title,
+  tone,
+  items,
+  defaultOpen = false,
+}: {
+  title: string
+  tone: 'error' | 'warning'
+  items: string[]
+  defaultOpen?: boolean
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen)
+  return (
+    <div className={`response-area__section response-area__section--${tone}`}>
+      <button type="button" onClick={() => setIsOpen((open) => !open)} aria-expanded={isOpen}>
+        {tone === 'error' ? <CircleAlert size={14} /> : <TriangleAlert size={14} />}
+        {title}
+        <ChevronDown size={14} className={isOpen ? 'response-area__chevron--open' : ''} />
+      </button>
+      {isOpen && (
+        <ul>
+          {items.map((message, index) => (
+            <li key={index}>{message}</li>
+          ))}
+        </ul>
       )}
     </div>
   )
 }
 
+const STATUS_CONFIG: Record<string, { label: string; icon: typeof CircleCheck }> = {
+  completed: { label: 'Completed', icon: CircleCheck },
+  failed: { label: 'Failed', icon: CircleAlert },
+  awaiting_clarification: { label: 'Needs input', icon: TriangleAlert },
+}
+
 function StatusBadge({ status }: { status: string }) {
+  const config = STATUS_CONFIG[status] ?? { label: status.replace(/_/g, ' '), icon: CircleCheck }
+  const Icon = config.icon
   return (
     <span className={`response-area__status-badge response-area__status-badge--${status}`}>
-      {status.replace(/_/g, ' ')}
+      <Icon size={13} strokeWidth={2.5} />
+      {config.label}
     </span>
   )
 }

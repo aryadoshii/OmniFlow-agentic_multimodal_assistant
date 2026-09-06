@@ -202,6 +202,20 @@ class ToolAlreadyRegisteredError(OmniFlowException):
         )
 
 
+class ConversationNotFoundError(OmniFlowException):
+    """Raised when a requested conversation id does not exist in history."""
+
+    def __init__(
+        self, message: str, details: dict[str, Any] | None = None
+    ) -> None:
+        super().__init__(
+            message=message,
+            error_code="CONVERSATION_NOT_FOUND",
+            status_code=404,
+            details=details,
+        )
+
+
 class RAGRetrievalError(ProcessingFailureError):
     """Raised when vector store indexing or semantic retrieval fails."""
 

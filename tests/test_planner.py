@@ -7,21 +7,48 @@ shape, tool-catalog scoping, nonexistent-tool rejection, and failure
 propagation.
 """
 
+import json
 from unittest.mock import MagicMock
 
 import pytest
 
 from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import Plan, PlanStep, create_plan
+from omniflow.agents.planner import (
+    Plan,
+    PlanStep,
+    _PlanSchema,
+    _PlanStepSchema,
+    create_plan,
+)
 from omniflow.exceptions import ExternalProviderError, OrchestrationError
 from omniflow.tools.base import BaseTool
 from omniflow.tools.registry import ToolRegistry
 from pydantic import BaseModel
 
 
+def _wire_step(step: PlanStep) -> _PlanStepSchema:
+    """Converts a PlanStep into the Gemini-facing wire shape (inputs as a
+    JSON string) -- what GeminiProvider.generate_structured() actually
+    returns in production, per _PlanSchema's docstring in planner.py."""
+    return _PlanStepSchema(
+        step_id=step.step_id,
+        tool_name=step.tool_name,
+        purpose=step.purpose,
+        inputs=json.dumps(step.inputs),
+        expected_result=step.expected_result,
+        depends_on=step.depends_on,
+    )
+
+
 def _mock_provider_returning(plan: Plan) -> MagicMock:
+    """Mocks generate_structured() returning the wire schema (_PlanSchema)
+    a real GeminiProvider produces for the planner's request -- not the
+    application-facing Plan, which create_plan() only ever constructs
+    itself via _to_plan()."""
     provider = MagicMock()
-    provider.generate_structured.return_value = plan
+    provider.generate_structured.return_value = _PlanSchema(
+        steps=[_wire_step(step) for step in plan.steps]
+    )
     return provider
 
 
@@ -169,12 +196,16 @@ class TestToolCatalogScoping:
         assert "rag_search" in prompt_arg
         assert "youtube_transcript" in prompt_arg
 
-    def test_response_model_argument_is_plan(self) -> None:
+    def test_response_model_argument_is_plan_schema(self) -> None:
+        """create_plan() must request the Gemini-safe wire schema
+        (_PlanSchema), not Plan itself -- Plan's PlanStep.inputs is an open
+        dict[str, Any], which the Gemini API's structured-output schema
+        translator rejects (see _PlanSchema's docstring)."""
         provider = _mock_provider_returning(Plan(steps=[_step(0)]))
         registry = _registry_with()
         create_plan(_intent(), provider, registry)
         call_args = provider.generate_structured.call_args
-        assert call_args[0][1] is Plan
+        assert call_args[0][1] is _PlanSchema
 
     def test_nonexistent_tool_raises_orchestration_error(self) -> None:
         """The LLM hallucinating a tool name must be rejected, never executed."""
@@ -260,3 +291,109 @@ class TestStructuredOutputAndFailures:
         registry = _registry_with()
         result = create_plan(_intent(intent=IntentType.GENERAL_CONVERSATION), provider, registry)
         assert result.steps == []
+
+    def test_non_empty_inputs_round_trip_through_the_wire_schema(self) -> None:
+        """A step with real inputs (e.g. {'query': '...'}) must survive the
+        dict -> JSON-string -> dict round trip intact."""
+        plan = Plan(
+            steps=[
+                _step(0, tool_name="rag_search", inputs={"query": "revenue figures", "top_k": 3})
+            ]
+        )
+        provider = _mock_provider_returning(plan)
+        registry = _registry_with("rag_search")
+
+        result = create_plan(_intent(intent=IntentType.QUESTION_ANSWERING), provider, registry)
+
+        assert result.steps[0].inputs == {"query": "revenue figures", "top_k": 3}
+
+    def test_malformed_inputs_json_raises_external_provider_error(self) -> None:
+        """Gemini returning a non-JSON (or non-object) inputs string must
+        surface as ExternalProviderError, the same failure category as any
+        other unvalidatable structured output -- not a raw exception."""
+        provider = MagicMock()
+        provider.generate_structured.return_value = _PlanSchema(
+            steps=[
+                _PlanStepSchema(
+                    step_id=0,
+                    tool_name=None,
+                    purpose="Do the thing.",
+                    inputs="not valid json{{{",
+                    expected_result="The thing is done.",
+                    depends_on=None,
+                )
+            ]
+        )
+        registry = _registry_with()
+
+        with pytest.raises(ExternalProviderError) as exc_info:
+            create_plan(_intent(), provider, registry)
+
+        assert exc_info.value.details["reason"] == "invalid_structured_output"
+
+    def test_non_object_inputs_json_raises_external_provider_error(self) -> None:
+        """A syntactically valid JSON value that isn't an object (e.g. a
+        bare list or string) must also be rejected, not passed through as
+        PlanStep.inputs (which requires a dict)."""
+        provider = MagicMock()
+        provider.generate_structured.return_value = _PlanSchema(
+            steps=[
+                _PlanStepSchema(
+                    step_id=0,
+                    tool_name=None,
+                    purpose="Do the thing.",
+                    inputs="[1, 2, 3]",
+                    expected_result="The thing is done.",
+                    depends_on=None,
+                )
+            ]
+        )
+        registry = _registry_with()
+
+        with pytest.raises(ExternalProviderError) as exc_info:
+            create_plan(_intent(), provider, registry)
+
+        assert exc_info.value.details["reason"] == "invalid_structured_output"
+
+
+# ---------------------------------------------------------------------------
+# Regression: the wire schema must actually be acceptable to the Gemini API
+# ---------------------------------------------------------------------------
+
+
+class TestPlanSchemaIsGeminiCompatible:
+    def test_plan_schema_builds_without_additional_properties_error(self) -> None:
+        """Reproduces the exact reported bug: Plan's PlanStep.inputs is an
+        open dict[str, Any], which compiles to a JSON schema containing
+        `additionalProperties`, a keyword the Gemini API's structured-output
+        schema translator rejects with `ValueError: additionalProperties is
+        not supported in the Gemini API.` -- raised locally by google-genai
+        before any network request is made (matching the reported ~2ms
+        failure with no HTTP request logged). _PlanSchema (the actual model
+        create_plan() now requests) must not trigger this."""
+        genai = pytest.importorskip("google.genai")
+        from google.genai import types as genai_types
+
+        client = genai.Client(api_key="unused-schema-build-only-key")
+        config = genai_types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=_PlanSchema,
+        )
+
+        # Confirms the OLD schema (Plan itself) reproduces the reported bug.
+        bad_config = genai_types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=Plan,
+        )
+        with pytest.raises(ValueError, match="additionalProperties"):
+            client.models.generate_content(model="gemini-2.5-flash", contents="x", config=bad_config)
+
+        # The fix: building a request with _PlanSchema must not raise --
+        # it may still fail later on the network call with the fake key,
+        # but never with a local schema-construction ValueError.
+        try:
+            client.models.generate_content(model="gemini-2.5-flash", contents="x", config=config)
+        except ValueError:
+            pytest.fail("_PlanSchema must not trigger a local schema-construction ValueError.")
+        except Exception:
+            pass  # Any network/auth failure past schema construction is expected and fine.

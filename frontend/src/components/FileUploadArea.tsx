@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react'
+import { UploadCloud } from 'lucide-react'
 import './FileUploadArea.css'
 
 // UX hint only (the `accept` attribute filters the OS file picker and is
@@ -12,10 +13,13 @@ const ACCEPTED_EXTENSIONS = ['.txt', '.pdf', '.jpg', '.jpeg', '.png', '.wav', '.
 interface FileUploadAreaProps {
   onFilesSelected: (files: File[]) => void
   disabled: boolean
+  /** Slimmer, single-line presentation once files are already attached --
+   * the full hint is only needed for the very first drop/browse. */
+  compact?: boolean
 }
 
 /** Drag-and-drop + click-to-browse picker for one or more files. */
-export function FileUploadArea({ onFilesSelected, disabled }: FileUploadAreaProps) {
+export function FileUploadArea({ onFilesSelected, disabled, compact = false }: FileUploadAreaProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -44,6 +48,7 @@ export function FileUploadArea({ onFilesSelected, disabled }: FileUploadAreaProp
 
   const classNames = [
     'file-upload-area',
+    compact && 'file-upload-area--compact',
     isDragging && 'file-upload-area--dragging',
     disabled && 'file-upload-area--disabled',
   ]
@@ -78,8 +83,13 @@ export function FileUploadArea({ onFilesSelected, disabled }: FileUploadAreaProp
           event.target.value = ''
         }}
       />
-      <p className="file-upload-area__text">Drag files here, or click to browse</p>
-      <p className="file-upload-area__hint">PDF · image (JPG/PNG) · audio (WAV/MP3/M4A) · text — multiple files supported</p>
+      <span className="file-upload-area__icon" aria-hidden="true">
+        <UploadCloud size={14} strokeWidth={1.75} />
+      </span>
+      <p className="file-upload-area__text">
+        {compact ? 'Drop more files ' : 'Drop files here '}
+        <span className="file-upload-area__text-muted">or browse</span>
+      </p>
     </div>
   )
 }

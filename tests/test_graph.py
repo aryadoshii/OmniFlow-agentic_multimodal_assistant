@@ -6,13 +6,14 @@ wired to a real (but test-local dummy) ToolRegistry. No Gemini, YouTube,
 FAISS, or any external service is called anywhere in this file.
 """
 
+import json
 from unittest.mock import patch
 
 import pytest
 from pydantic import BaseModel
 
 from omniflow.agents.intent import IntentResult, IntentType
-from omniflow.agents.planner import Plan, PlanStep
+from omniflow.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
 from omniflow.exceptions import InvalidInputError, OrchestrationError
 from omniflow.graph import build_graph, run_graph
 from omniflow.graph.routing import route_after_check_clarity, route_after_route_next
@@ -94,6 +95,25 @@ def _fake_intent_result(**overrides) -> IntentResult:
     return IntentResult(**defaults)
 
 
+def _plan_to_wire_schema(plan: Plan) -> _PlanSchema:
+    """Converts a Plan into the Gemini-facing wire shape (inputs as a JSON
+    string) a real GeminiProvider actually returns -- see planner.py's
+    _PlanSchema docstring."""
+    return _PlanSchema(
+        steps=[
+            _PlanStepSchema(
+                step_id=step.step_id,
+                tool_name=step.tool_name,
+                purpose=step.purpose,
+                inputs=json.dumps(step.inputs),
+                expected_result=step.expected_result,
+                depends_on=step.depends_on,
+            )
+            for step in plan.steps
+        ]
+    )
+
+
 class _FakeLLMProvider(BaseLLMProvider):
     """Deterministic BaseLLMProvider test double for graph-level tests.
 
@@ -125,11 +145,18 @@ class _FakeLLMProvider(BaseLLMProvider):
         return self._text_outputs
 
     def generate_structured(self, prompt, response_model, system_instruction=None):
-        value = self._outputs[response_model]
+        # The planner requests _PlanSchema (the Gemini-safe wire shape),
+        # not Plan directly -- see planner.py's _PlanSchema docstring. Test
+        # fixtures declare their canned output as a plain Plan for
+        # readability, so translate it here rather than in every test.
+        lookup_model = Plan if response_model is _PlanSchema else response_model
+        value = self._outputs[lookup_model]
         if isinstance(value, list):
-            idx = self._call_counts.get(response_model, 0)
-            self._call_counts[response_model] = idx + 1
-            return value[min(idx, len(value) - 1)]
+            idx = self._call_counts.get(lookup_model, 0)
+            self._call_counts[lookup_model] = idx + 1
+            value = value[min(idx, len(value) - 1)]
+        if lookup_model is Plan and response_model is _PlanSchema:
+            return _plan_to_wire_schema(value)
         return value
 
 

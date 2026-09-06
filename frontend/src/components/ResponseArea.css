@@ -1,246 +1,316 @@
 .response-area {
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 20px;
-  background: var(--bg);
-}
-
-.response-area--idle {
-  color: var(--text);
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .response-area--loading {
-  display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 10px;
-  color: var(--text);
+  padding: 4px 0 16px;
+  color: var(--text-muted);
+  font-size: 13.5px;
 }
 
 .response-area__spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
   border-radius: 50%;
-  animation: response-area-spin 0.7s linear infinite;
+  border: 2px solid var(--border);
+  border-top-color: var(--brand);
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
 }
 
-@keyframes response-area-spin {
+@keyframes spin {
   to {
     transform: rotate(360deg);
   }
 }
 
-.response-area--error {
-  border-color: #e5484d;
-  background: color-mix(in srgb, #e5484d 8%, var(--bg));
+.response-area--top-error {
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--error);
 }
 
 .response-area__error-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 4px;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--error);
+}
+
+.response-area__error-message {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.response-area__error-details {
+  margin-top: 8px;
+}
+
+.response-area__error-details button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: none;
+  color: var(--error);
+  font-size: 11.5px;
   font-weight: 600;
-  color: #e5484d;
+  padding: 0;
+}
+
+.response-area__error-details pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  overflow-x: auto;
 }
 
 .response-area__meta {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 12px;
 }
 
-.response-area__status-badge {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: capitalize;
-  background: var(--code-bg);
-  color: var(--text-h);
-}
-
-.response-area__status-badge--completed {
-  background: color-mix(in srgb, #30a46c 15%, var(--bg));
-  color: #218358;
-}
-
-.response-area__status-badge--failed {
-  background: color-mix(in srgb, #e5484d 15%, var(--bg));
-  color: #c53030;
-}
-
-.response-area__status-badge--awaiting_clarification {
-  background: color-mix(in srgb, #f5a623 18%, var(--bg));
-  color: #a15c00;
+.response-area__brand {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--brand-deep);
 }
 
 .response-area__duration {
   font-size: 12px;
-  color: var(--text);
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.response-area__status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.response-area__status-badge--completed {
+  background: var(--success-bg);
+  color: var(--success);
+}
+
+.response-area__status-badge--failed {
+  background: var(--error-bg);
+  color: var(--error);
+}
+
+.response-area__status-badge--awaiting_clarification {
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .response-area__clarification {
-  padding: 12px 14px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, #f5a623 45%, var(--border));
-  background: color-mix(in srgb, #f5a623 14%, var(--bg));
-  margin-bottom: 12px;
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--brand-light);
 }
 
 .response-area__clarification-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 4px;
+  font-size: 12.5px;
   font-weight: 700;
-  color: #a15c00;
+  color: var(--warning);
 }
 
 .response-area__clarification p {
   margin: 0 0 4px;
+  font-size: 13.5px;
+  color: var(--text-h);
 }
 
 .response-area__clarification-hint {
-  font-size: 12px;
-  color: var(--text);
-  font-style: italic;
+  font-size: 11.5px;
+  color: var(--text-muted) !important;
 }
 
 .response-area__answer {
-  margin: 0 0 12px;
-  line-height: 1.55;
+  font-size: 15px;
   color: var(--text-h);
+  line-height: 1.7;
 }
 
 .response-area__answer--empty {
-  white-space: normal;
-  color: var(--text);
+  color: var(--text-muted);
   font-style: italic;
 }
 
-/* Markdown content rendered via react-markdown -- kept compact since this
-   is a chat-style answer, not a long-form document. */
-.response-area__answer :first-child {
-  margin-top: 0;
-}
-
-.response-area__answer :last-child {
-  margin-bottom: 0;
-}
-
-.response-area__answer p,
-.response-area__answer ul,
-.response-area__answer ol {
-  margin: 0 0 10px;
-}
-
-.response-area__answer ul,
-.response-area__answer ol {
-  padding-left: 22px;
-}
-
-.response-area__answer h1,
-.response-area__answer h2,
-.response-area__answer h3 {
-  margin: 14px 0 6px;
-  color: var(--text-h);
-}
-
-.response-area__answer code {
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 0.9em;
-  background: var(--code-bg);
-  padding: 1px 5px;
-  border-radius: 4px;
-}
-
-.response-area__answer pre {
-  background: var(--code-bg);
-  padding: 10px 12px;
-  border-radius: 8px;
-  overflow-x: auto;
-}
-
-.response-area__answer pre code {
-  background: none;
-  padding: 0;
-}
-
-.response-area__answer table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 0 0 10px;
-}
-
-/* GFM tables can be wide (e.g. a multi-column comparison) -- scroll the
-   table itself rather than letting it force the whole page wider. */
-.response-area__answer .table-wrapper,
-.response-area__answer table {
-  display: block;
-  overflow-x: auto;
-}
-
-.response-area__answer th,
-.response-area__answer td {
-  border: 1px solid var(--border);
-  padding: 6px 10px;
-  text-align: left;
-  font-size: 14px;
-}
-
-.response-area__answer th {
-  background: var(--code-bg);
-  font-weight: 600;
-}
-
 .response-area__section {
-  margin-top: 8px;
-  font-size: 14px;
+  border-radius: var(--radius-sm);
 }
 
-.response-area__section summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--text-h);
-  padding: 4px 0;
+.response-area__section > button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-size: 12.5px;
+  font-weight: 700;
 }
 
-.response-area__section ul,
-.response-area__section ol {
-  margin: 6px 0 0;
-  padding-left: 20px;
+.response-area__section--error > button {
+  color: var(--error);
+}
+
+.response-area__section--warning > button {
+  color: var(--warning);
+}
+
+.response-area__section > button svg:last-child {
+  margin-left: auto;
+  transition: transform 0.15s ease;
+}
+
+.response-area__chevron--open {
+  transform: rotate(180deg);
+}
+
+.response-area__section ul {
+  margin: 4px 0 4px;
+  padding: 0 4px 0 28px;
+  font-size: 12.75px;
   color: var(--text);
+}
+
+.response-area__section--error ul {
+  border-left: 2px solid var(--error-bg);
+  padding-left: 26px;
+}
+
+.response-area__section--warning ul {
+  border-left: 2px solid var(--warning-bg);
+  padding-left: 26px;
 }
 
 .response-area__section li {
   margin-bottom: 4px;
 }
 
-.response-area__doc-warning {
-  color: #a15c00;
+/* --- Markdown answer styling --- */
+
+.markdown :first-child {
+  margin-top: 0;
 }
 
-.response-area__trace-step {
-  padding-left: 8px;
-  border-left: 2px solid var(--border);
+.markdown :last-child {
+  margin-bottom: 0;
 }
 
-.response-area__trace-step--understanding {
-  border-left-color: #6366f1;
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-size: 1.05em;
+  font-weight: 700;
+  margin: 1.1em 0 0.4em;
+  color: var(--text-h);
 }
 
-.response-area__trace-step--planning {
-  border-left-color: #f5a623;
+.markdown p {
+  margin: 0 0 0.85em;
 }
 
-.response-area__trace-step--tool {
-  border-left-color: var(--accent);
+.markdown ul,
+.markdown ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.3em;
 }
 
-.response-area__trace-step--synthesis {
-  border-left-color: #30a46c;
+.markdown li {
+  margin-bottom: 0.3em;
 }
 
-.response-area__trace-step--failed {
-  color: #c53030;
-  border-left-color: #e5484d;
+.markdown li > ul,
+.markdown li > ol {
+  margin-top: 0.3em;
+}
+
+.markdown strong {
+  color: var(--text-h);
+  font-weight: 700;
+}
+
+.markdown code {
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  font-size: 0.88em;
+  background: var(--bg-inset);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.markdown pre {
+  background: var(--text-h);
+  color: #f5efe6;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  margin: 0 0 0.85em;
+}
+
+.markdown pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+.markdown blockquote {
+  margin: 0 0 0.85em;
+  padding: 2px 14px;
+  border-left: 3px solid var(--brand-light);
+  color: var(--text-muted);
+}
+
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.85em;
+  font-size: 0.92em;
+}
+
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.markdown th {
+  background: var(--bg-inset);
+  font-weight: 700;
+  color: var(--text-h);
+}
+
+.markdown a {
+  color: var(--brand-dark);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .response-area__spinner {
+    animation: none;
+  }
 }

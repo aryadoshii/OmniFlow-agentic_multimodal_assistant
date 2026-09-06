@@ -1,47 +1,77 @@
 .conversation-turn {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
+  padding: 28px 0;
+  border-top: 1px solid var(--border);
+  animation: turn-in 0.2s ease;
+}
+
+.conversation-turn:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+@keyframes turn-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .conversation-turn__query {
-  padding: 2px 2px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .conversation-turn__query-label {
-  display: block;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text);
-  margin-bottom: 2px;
+  color: var(--brand-deep);
 }
 
 .conversation-turn__query-text {
   margin: 0;
-  font-size: 15px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 600;
   color: var(--text-h);
-  white-space: pre-wrap;
+  line-height: 1.4;
 }
 
 .conversation-turn__query-files {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 12px;
-  color: var(--text);
+  color: var(--text-muted);
 }
 
-/* Earlier turns stay visible (preserving context) but recede visually so
-   the latest result reads as the primary focus. */
+.conversation-turn__answer {
+  padding-left: 14px;
+  border-left: 2px solid var(--border-soft);
+}
+
 .conversation-turn--compact {
-  opacity: 0.7;
-}
-
-.conversation-turn--compact:hover {
-  opacity: 1;
+  opacity: 0.82;
 }
 
 .conversation-turn--compact .conversation-turn__query-text {
-  font-size: 14px;
+  font-size: 14.5px;
+}
+
+@media (max-width: 520px) {
+  .conversation-turn {
+    padding: 22px 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-turn {
+    animation: none;
+  }
 }

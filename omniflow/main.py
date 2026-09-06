@@ -9,9 +9,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from omniflow.api.error_handlers import register_error_handlers
-from omniflow.api.routes import agent, health, ingest, root
+from omniflow.api.routes import agent, health, history, ingest, root
 from omniflow.config import get_settings
 from omniflow.logging import setup_logging
+from omniflow.services.history_store import init_db as init_history_db
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan context managing startup and shutdown tasks."""
     settings = get_settings()
     setup_logging(log_level=settings.log_level)
+    init_history_db()
     logger.info(
         "Starting %s v%s in %s environment",
         settings.app_name,
@@ -56,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(agent.router)
+    app.include_router(history.router)
 
     # Single-service deployment (Phase 7): only when explicitly running in
     # production AND the frontend has actually been built (the deployment
