@@ -1,0 +1,52 @@
+# Version control
+.git
+.gitignore
+
+# Secrets -- never sent to the Docker build context. Only .env.example
+# (a template with no real values) is ever meant to ship anywhere.
+.env
+.env.*
+!.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv
+venv/
+env/
+
+# Frontend build artifacts and dependencies -- regenerated inside the
+# frontend-build stage; never copied in from the host.
+frontend/node_modules
+frontend/dist
+
+# Local ML model caches -- downloaded on demand at runtime, never committed
+# or baked into the image (see omniflow's lazy-loading design).
+.cache/
+.sentence_transformers_cache/
+.hf_cache/
+hf_cache/
+models/
+model_cache/
+*.bin
+*.safetensors
+*.onnx
+*.pt
+*.pth
+
+# Not needed inside the image (tests run locally/in CI, not in the
+# deployed container) -- excluded from the build context to keep it small
+# and fast, not copied by the Dockerfile regardless.
+tests/
+*.md
+.idea/
+.vscode/
+.DS_Store

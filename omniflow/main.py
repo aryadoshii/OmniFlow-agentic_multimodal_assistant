@@ -2,8 +2,11 @@
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from omniflow.api.error_handlers import register_error_handlers
 from omniflow.api.routes import agent, health, ingest, root
@@ -11,6 +14,12 @@ from omniflow.config import get_settings
 from omniflow.logging import setup_logging
 
 logger = logging.getLogger(__name__)
+
+# Phase 7 (Render single-service deployment): the built frontend, if
+# present, at the same fixed location the deployment Dockerfile copies it
+# to (frontend/dist, relative to the repo root -- this file lives at
+# <repo>/omniflow/main.py, so parent.parent is <repo>).
+_FRONTEND_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 @asynccontextmanager
@@ -42,11 +51,34 @@ def create_app() -> FastAPI:
     # Register centralized exception handlers
     register_error_handlers(app)
 
-    # Register modular routers
-    app.include_router(root.router)
+    # Register modular routers. /health, /ingest, /query are always the
+    # backend's real API surface, unaffected by the frontend below.
     app.include_router(health.router)
     app.include_router(ingest.router)
     app.include_router(agent.router)
+
+    # Single-service deployment (Phase 7): only when explicitly running in
+    # production AND the frontend has actually been built (the deployment
+    # Dockerfile builds it and copies it to frontend/dist) does "/" serve
+    # the built SPA instead of the JSON discovery response -- so local
+    # dev/test runs (APP_ENV defaults to "development", and the test suite's
+    # own settings always use "test") are completely unaffected regardless
+    # of whether a stray local `npm run build` output happens to exist on
+    # disk. This decision is made once, at app-construction time, exactly
+    # like a real deployed container would (APP_ENV=production is part of
+    # its actual startup environment) -- not per-request.
+    if settings.is_production and _FRONTEND_DIST.is_dir():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=_FRONTEND_DIST / "assets"),
+            name="frontend-assets",
+        )
+
+        @app.get("/", include_in_schema=False)
+        async def serve_frontend_index() -> FileResponse:
+            return FileResponse(_FRONTEND_DIST / "index.html")
+    else:
+        app.include_router(root.router)
 
     return app
 

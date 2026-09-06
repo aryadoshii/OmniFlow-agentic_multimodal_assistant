@@ -1,0 +1,19 @@
+# Render Blueprint for OmniFlow's single-service deployment: one Docker
+# web service builds the frontend and runs the FastAPI backend from the
+# same container/origin (see Dockerfile and omniflow/main.py).
+#
+# GEMINI_API_KEY is deliberately NOT given a value here (sync: false) --
+# Render will prompt for it on first deploy and store it only in the
+# service's own environment, never in this file or git history.
+services:
+  - type: web
+    name: omniflow
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: GEMINI_API_KEY
+        sync: false

@@ -245,3 +245,106 @@ OMNIFLOW_RUN_MODEL_INTEGRATION_TESTS=1 pytest -k RealModel -v
 - **No persistence.** The FAISS index and chunk metadata are in-memory only and are lost on process restart, by design for this phase.
 - **The default similarity threshold (0.2) is a conservative, principled default, not an empirically tuned one** — no labeled relevance dataset or downstream answer-quality signal exists yet to validate it against.
 - YouTube transcript retrieval has been verified against a mocked provider boundary in all automated tests; this README does not claim live network retrieval from youtube.com has been exercised in this environment.
+
+---
+
+## Deployment (Docker + Render)
+
+A single-service deployment: one Docker container runs the FastAPI backend
+and also serves the built React frontend from the same process/origin
+(see `omniflow/main.py` — `GET /` serves the built SPA only when
+`APP_ENV=production` **and** the frontend has actually been built into
+`frontend/dist`; local/dev/test runs are unaffected and keep the existing
+JSON discovery response at `/`).
+
+**Live demo:** `https://<your-render-service-name>.onrender.com` — replace
+this placeholder with your actual Render URL once deployed. (Render's free
+tier spins the service down after inactivity; the first request after a
+period of idleness can take 30–60+ seconds to respond while it wakes up.)
+
+### Build and run with Docker locally
+
+```bash
+docker build -t omniflow .
+docker run --rm -p 8000:8000 \
+  -e GEMINI_API_KEY=your_real_key_here \
+  omniflow
+```
+
+Then visit:
+- `http://localhost:8000/` — the built frontend (single-page app)
+- `http://localhost:8000/health` — health check
+- `http://localhost:8000/docs` — OpenAPI docs
+
+The image builds the frontend in a Node stage and copies only the built
+static output into the final Python image — Node itself is not present in
+the runtime image. Without `GEMINI_API_KEY` set, the container still starts
+and serves the UI/`/health`/`/ingest` normally; `/query` will return a
+clean `CONFIGURATION_ERROR` JSON response until a real key is supplied
+(this is the existing, tested behavior — not new for deployment).
+
+### Deploying to Render
+
+**Option A — Blueprint (recommended):** In the Render dashboard, choose
+**New +** → **Blueprint**, point it at this repository. Render reads
+`render.yaml` at the repo root and provisions a single Docker-based Web
+Service (free plan, health check at `/health`). After it's created, open
+the service's **Environment** tab and set `GEMINI_API_KEY` to your real
+key (deliberately left unset in `render.yaml` — never commit it).
+
+**Option B — Manual dashboard setup:** New + → Web Service → connect this
+repo → Runtime: **Docker** → leave the Dockerfile path as the repo root
+`Dockerfile` → plan: **Free** → Health Check Path: `/health` → add the
+environment variables listed below → Create Web Service.
+
+Render automatically supplies `$PORT`; the Dockerfile's `CMD` reads it at
+container start (`uvicorn ... --port ${PORT:-8000}`) — do not set `PORT`
+yourself.
+
+### Required/optional environment variables (Render)
+
+| Variable | Required | Notes |
+|---|---|---|
+| `GEMINI_API_KEY` | **Yes** | Set only in Render's dashboard (or via `render.yaml` with `sync: false`, filled in manually) — never committed. Without it, `/query` returns a typed `CONFIGURATION_ERROR`, not a crash. |
+| `APP_ENV` | Recommended | Set to `production` — this is what makes `GET /` serve the built frontend (see above). `render.yaml` sets this for you. |
+| `LOG_LEVEL` | No | Defaults to `INFO`. |
+| `LLM_MODEL` | No | Defaults to `gemini-2.5-flash`. |
+| `GEMINI_TIMEOUT_SECONDS` | No | Defaults to `30`. |
+| `MAX_UPLOAD_SIZE_MB` | No | Defaults to `25`. |
+| `MAX_AGENT_STEPS` / `MAX_TOOL_CALLS` / `MAX_RETRIES` | No | Bound the agent loop; existing defaults (`6`/`6`/`2`) preserved — see "Resource / memory limitations" below before lowering further. |
+| `EMBEDDING_MODEL_NAME` / `EMBEDDING_DEVICE` / `EMBEDDING_BATCH_SIZE` | No | Existing RAG/embedding defaults preserved unchanged; see limitations below. |
+| `WHISPER_MODEL_SIZE` / `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` | No | Existing defaults (`tiny`/`cpu`/`int8`) preserved — already the lightest available Whisper configuration. |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` / `RAG_TOP_K` / `RAG_SIMILARITY_THRESHOLD` | No | Existing RAG defaults preserved unchanged. |
+| `PORT` | **Do not set** | Supplied automatically by Render at container start. |
+| `HOST` | No | The Dockerfile already sets this to `0.0.0.0` (required to accept Render's traffic); no action needed. |
+
+See `.env.example` for the full list with descriptions (used for local
+development; Render reads its own dashboard/`render.yaml` variables, not
+this file).
+
+### Health check
+
+`GET /health` returns `{"status": "healthy", "app_name": "OmniFlow", "version": "...", "environment": "..."}` with HTTP 200 and requires no
+authentication or request body — configured as Render's health check path
+in `render.yaml` (and should be entered the same way if configuring
+manually).
+
+### Resource / memory limitations (read before relying on RAG in production)
+
+- **Lazy loading is preserved everywhere**: the sentence-transformers
+  embedding model and faster-whisper are never loaded at container
+  startup, and RAG indexing only happens on a request that actually
+  invokes the `rag_search` tool (see Phase 5's lazy-indexing fix) — a
+  direct-context request (e.g. "summarize this short PDF") never touches
+  either, regardless of file uploads.
+- **The first request that genuinely triggers RAG will load
+  sentence-transformers/PyTorch into memory** (observed ~600 MB–1 GB
+  resident memory during development). Render's free tier is memory
+  constrained; if the service is killed or restarts unexpectedly on such a
+  request, this is the most likely cause. This is a capacity/hosting-tier
+  limitation, not an application defect — see Phase 5/6's reports for the
+  full investigation. Upgrading the Render plan, or a future model swap
+  (explicitly out of scope for this phase), would address it; no code
+  change was made here to work around it.
+- Audio transcription (faster-whisper, `tiny` model) was confirmed to stay
+  well under that ceiling in the same environment.
