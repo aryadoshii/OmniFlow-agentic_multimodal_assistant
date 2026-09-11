@@ -56,6 +56,57 @@ def test_ingestion_service_text_and_files() -> None:
     assert "Important research findings" in docs[1].content
 
 
+class TestDetectedYouTubeUrls:
+    """Deterministic regex-based backstop for detected_urls (see
+    IngestionService._extract_youtube_urls) -- independent of, and a
+    fallback for, the LLM's own URL-spotting in understand_intent."""
+
+    def test_youtube_watch_url_is_detected(self) -> None:
+        service = get_mock_ingestion_service()
+        doc = service.process_text(
+            "Please summarize https://www.youtube.com/watch?v=jNQXAC9IVRw for me."
+        )
+        assert doc.detected_urls == ["https://www.youtube.com/watch?v=jNQXAC9IVRw"]
+
+    def test_youtu_be_short_url_is_detected(self) -> None:
+        service = get_mock_ingestion_service()
+        doc = service.process_text("Watch this: https://youtu.be/dQw4w9WgXcQ")
+        assert doc.detected_urls == ["https://youtu.be/dQw4w9WgXcQ"]
+
+    def test_no_urls_yields_empty_list(self) -> None:
+        service = get_mock_ingestion_service()
+        doc = service.process_text("There is no link in this text at all.")
+        assert doc.detected_urls == []
+
+    def test_multiple_youtube_urls_are_all_captured(self) -> None:
+        service = get_mock_ingestion_service()
+        doc = service.process_text(
+            "First https://youtu.be/dQw4w9WgXcQ then "
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw and also "
+            "https://www.youtube.com/shorts/abc12345678."
+        )
+        assert doc.detected_urls == [
+            "https://youtu.be/dQw4w9WgXcQ",
+            "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+            "https://www.youtube.com/shorts/abc12345678",
+        ]
+
+    def test_trailing_punctuation_is_stripped_before_validation(self) -> None:
+        service = get_mock_ingestion_service()
+        doc = service.process_text(
+            "See (https://youtu.be/dQw4w9WgXcQ), it's great! Also https://youtu.be/jNQXAC9IVRw."
+        )
+        assert doc.detected_urls == [
+            "https://youtu.be/dQw4w9WgXcQ",
+            "https://youtu.be/jNQXAC9IVRw",
+        ]
+
+    def test_non_youtube_url_is_not_detected(self) -> None:
+        service = get_mock_ingestion_service()
+        doc = service.process_text("See https://example.com/not-youtube for details.")
+        assert doc.detected_urls == []
+
+
 def test_ingestion_service_unsupported_file() -> None:
     service = get_mock_ingestion_service()
     with pytest.raises(UnsupportedFileError):

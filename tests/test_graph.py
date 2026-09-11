@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from backend.agents.intent import IntentResult, IntentType
 from backend.agents.planner import Plan, PlanStep, _PlanSchema, _PlanStepSchema
-from backend.exceptions import InvalidInputError, OrchestrationError
+from backend.exceptions import ExternalProviderError, InvalidInputError, OrchestrationError
 from backend.graph import build_graph, run_graph
 from backend.graph.routing import route_after_check_clarity, route_after_route_next
 from backend.models.state import AgentState, WorkflowStatus
@@ -402,8 +402,23 @@ class TestGraphExecution:
         assert step_names.count("tool:echo") == 1
 
     def test_clarification_needed_routes_to_clarification_and_stops(self) -> None:
-        graph = build_graph()
-        result = run_graph(AgentState(clarification_needed=True), compiled_graph=graph)
+        """Drives clarification_needed through a real understand_intent call
+        (a fake provider whose IntentResult sets needs_clarification=True)
+        rather than injecting the field directly onto the initial state --
+        with the FAILED short-circuit now in route_after_check_clarity (see
+        its docstring), a graph built with no llm_provider at all would have
+        understand_intent fail before check_clarity is ever reached, making
+        clarification_needed's directly-set value moot."""
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _fake_intent_result(
+                    needs_clarification=True,
+                    clarification_question="Which document do you mean?",
+                ),
+            }
+        )
+        graph = build_graph(llm_provider=provider)
+        result = run_graph(AgentState(original_request="summarize it"), compiled_graph=graph)
         assert result.status == WorkflowStatus.AWAITING_CLARIFICATION
         step_names = [t.step_name for t in result.execution_trace]
         assert "node:clarification" in step_names
@@ -436,6 +451,37 @@ class TestGraphExecution:
         assert step_names.count("node:observe_result") == 3
         assert step_names.count("node:route_next") == 3
         assert step_names.count("node:synthesize") == 1
+
+    def test_understand_intent_failure_does_not_cascade_into_plan_or_execute_tool(self) -> None:
+        """Regression test for the three-error-cascade bug: a failed
+        understand_intent (e.g. a transient Gemini error that exhausted
+        retries) must short-circuit straight to synthesize (see
+        route_after_check_clarity's FAILED check), never walking into
+        plan/execute_tool -- each of which would fail again on top of the
+        one real root cause, turning a single transient issue into three
+        stacked errors in the final response."""
+
+        class _FailsOnIntentProvider(BaseLLMProvider):
+            def generate(self, prompt: str, system_instruction: str | None = None) -> str:
+                return "Best-effort answer despite the earlier failure."
+
+            def generate_structured(self, prompt, response_model, system_instruction=None):
+                raise ExternalProviderError(
+                    "Gemini service is currently unavailable.",
+                    details={"reason": "service_unavailable"},
+                )
+
+        graph = build_graph(ToolRegistry(), llm_provider=_FailsOnIntentProvider())
+        result = run_graph(AgentState(original_request="Summarize this."), compiled_graph=graph)
+
+        assert len(result.errors) == 1
+        assert "service_unavailable" in result.errors[0] or "unavailable" in result.errors[0]
+
+        step_names = [t.step_name for t in result.execution_trace]
+        assert "node:plan" not in step_names
+        assert "node:execute_tool" not in step_names
+        assert "node:understand_intent" in step_names
+        assert "node:synthesize" in step_names
 
     def test_nodes_do_not_mutate_semantic_fields_beyond_execute_tool(self) -> None:
         """Placeholder nodes must be honest: no real intent/answer content
@@ -494,6 +540,15 @@ class TestRoutingFunctions:
 
     def test_route_after_check_clarity_goes_to_clarification_when_flagged(self) -> None:
         assert route_after_check_clarity(AgentState(clarification_needed=True)) == "clarification"
+
+    def test_route_after_check_clarity_goes_to_synthesize_on_prior_failure(self) -> None:
+        """A FAILED status (e.g. understand_intent itself failed) must
+        short-circuit straight to synthesize -- even if clarification_needed
+        happens to be set -- rather than continuing into plan/execute_tool,
+        which would each fail again and stack derived errors on top of the
+        one real root cause."""
+        state = AgentState(status=WorkflowStatus.FAILED, clarification_needed=True)
+        assert route_after_check_clarity(state) == "synthesize"
 
     def test_route_after_route_next_goes_to_synthesize_when_no_plan(self) -> None:
         assert route_after_route_next(AgentState(plan=None, current_step=0)) == "synthesize"
@@ -653,9 +708,20 @@ class TestTraceBehavior:
                 assert entry.step_name.startswith("node:")
 
     def test_successful_tool_step_trace_carries_the_real_tool_name(self) -> None:
-        graph = build_graph(_registry_with_echo())
-        plan = Plan(steps=[_step(0, tool_name="echo")])
-        result = run_graph(AgentState(plan=plan), compiled_graph=graph)
+        """Uses a real fake provider to reach execute_tool (rather than
+        injecting `plan=` directly onto the initial state with no provider
+        at all) -- with the FAILED short-circuit now in
+        route_after_check_clarity, a providerless graph never reaches plan/
+        execute_tool in the first place, so a directly-injected plan would
+        never be exercised."""
+        provider = _FakeLLMProvider(
+            {
+                IntentResult: _fake_intent_result(),
+                Plan: [Plan(steps=[_step(0, tool_name="echo")]), Plan(steps=[])],
+            }
+        )
+        graph = build_graph(_registry_with_echo(), llm_provider=provider)
+        result = run_graph(AgentState(original_request="echo something"), compiled_graph=graph)
         tool_entries = [e for e in result.execution_trace if e.tool_name == "echo"]
         assert len(tool_entries) == 1
         assert tool_entries[0].step_name == "tool:echo"

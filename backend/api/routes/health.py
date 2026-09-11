@@ -19,7 +19,7 @@ class HealthResponse(BaseModel):
 
 
 @router.get("/health", response_model=HealthResponse)
-async def get_health(settings: Settings = Depends(get_settings)) -> HealthResponse:
+def get_health(settings: Settings = Depends(get_settings)) -> HealthResponse:
     """Returns application health status, version, and running environment."""
     return HealthResponse(
         status="healthy",

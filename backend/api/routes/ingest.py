@@ -36,7 +36,7 @@ def get_ingestion_service() -> IngestionService:
 
 
 @router.post("/ingest", response_model=IngestionResponse)
-async def ingest_content(
+def ingest_content(
     text: Annotated[str | None, Form(description="Optional plain text input.")] = None,
     files: Annotated[
         list[UploadFile] | None,
@@ -58,7 +58,7 @@ async def ingest_content(
     if files:
         for file in files:
             filename = file.filename or "upload"
-            content = await file.read()
+            content = file.file.read()
             declared_mime = file.content_type
             file_payloads.append((content, filename, declared_mime))
 

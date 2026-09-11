@@ -8,6 +8,18 @@ This module contains no planner, prompt-template, tool-selection, or RAG
 logic -- its only responsibility is LLM communication: constructing the
 client, sending a generation request, validating structured output, and
 translating SDK/network failures into OmniFlow domain exceptions.
+
+Retries a bounded number of times, with exponential backoff, but ONLY for
+errors that are genuinely transient (5xx, 429, timeouts, network-level
+failures) -- see ``_request``'s docstring and ``_RETRYABLE_REASONS``. This
+is the only layer in OmniFlow that retries a Gemini call; callers (graph
+nodes, agents) never see a retry happen -- they see either an eventual
+success or the same ``ExternalProviderError``/``ConfigurationError`` they
+already handle today, raised only after retries are exhausted (or
+immediately, for non-transient errors). Retry attempts are logged at
+WARNING level with only safe operational metadata (attempt number, error
+reason, backoff delay) -- never the prompt, system instruction, or
+response content.
 """
 
 from __future__ import annotations
@@ -40,12 +52,21 @@ except ImportError:  # pragma: no cover - exercised via a dedicated test
     genai_types = None  # type: ignore[assignment]
 
 # google-genai's own default retry policy retries up to 5 times (with
-# backoff) on 429/5xx by default. That would silently delay and obscure the
-# rate-limit signal Phase 4's future agent execution layer needs to react to,
-# and risks burning through free-tier quota on retries this provider has no
-# business making. Retries are explicitly disabled here (1 = no retries);
-# retry/backoff policy belongs to that future layer, not this one.
+# backoff) on 429/5xx by default, with no hook for this application's own
+# logging discipline or configurable backoff. The SDK's built-in retrying is
+# explicitly disabled here (1 = no retries); retry/backoff policy is instead
+# implemented explicitly in _request below, where it can be bounded via
+# Settings (gemini_max_retries/gemini_retry_backoff_seconds), scoped to only
+# genuinely transient failures, and logged without ever including prompt or
+# response content.
 _NO_RETRY_ATTEMPTS = 1
+
+# ExternalProviderError "reason" values (see _raise_for_api_error and the
+# httpx exception handlers below) that represent a transient failure worth
+# retrying. Deliberately narrow: authentication/model-name problems
+# (ConfigurationError) and structured-output validation failures are never
+# in this set, because retrying the exact same request cannot fix them.
+_RETRYABLE_REASONS = frozenset({"service_unavailable", "rate_limited", "timeout", "network_error"})
 
 
 class GeminiProvider(BaseLLMProvider):
@@ -161,7 +182,55 @@ class GeminiProvider(BaseLLMProvider):
         system_instruction: str | None = None,
         response_schema: type[BaseModel] | None = None,
     ) -> Any:
-        """Sends one generation request and translates any failure.
+        """Sends a generation request, retrying transient failures with backoff.
+
+        Delegates each individual attempt to ``_send_once`` (identical to
+        this method's old single-attempt body). If an attempt raises an
+        ``ExternalProviderError`` whose ``details["reason"]`` is in
+        ``_RETRYABLE_REASONS`` (service_unavailable, rate_limited, timeout,
+        network_error), this retries up to ``settings.gemini_max_retries``
+        additional times, sleeping ``gemini_retry_backoff_seconds * (2 **
+        attempt)`` between attempts. Any other exception -- a
+        ``ConfigurationError`` (bad credentials/model name), or an
+        ``ExternalProviderError`` with a non-transient reason (e.g.
+        unexpected_error, api_error) -- propagates immediately on the first
+        attempt: retrying the identical request would not help.
+
+        Never logs the prompt, system instruction, or model output -- only
+        safe operational metadata (model name, output type, duration,
+        attempt number, retry reason, backoff delay, and success/failure).
+        """
+        max_retries = self._settings.gemini_max_retries
+        backoff_base = self._settings.gemini_retry_backoff_seconds
+        attempt = 0
+        while True:
+            try:
+                return self._send_once(
+                    prompt, system_instruction=system_instruction, response_schema=response_schema
+                )
+            except ExternalProviderError as exc:
+                reason = exc.details.get("reason")
+                if reason not in _RETRYABLE_REASONS or attempt >= max_retries:
+                    raise
+                delay = backoff_base * (2**attempt)
+                logger.warning(
+                    "Retrying Gemini request after transient failure "
+                    "(attempt=%d/%d, reason=%s, backoff_seconds=%.1f).",
+                    attempt + 1,
+                    max_retries,
+                    reason,
+                    delay,
+                )
+                time.sleep(delay)
+                attempt += 1
+
+    def _send_once(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        response_schema: type[BaseModel] | None = None,
+    ) -> Any:
+        """Sends exactly one generation request attempt and translates any failure.
 
         Never logs the prompt, system instruction, or model output -- only
         safe operational metadata (model name, output type, duration, and

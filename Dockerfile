@@ -91,6 +91,31 @@ USER appuser
 RUN --mount=type=cache,target=/home/appuser/.cache/uv,uid=1000,gid=1000 \
     uv sync --frozen --no-dev
 
+# Pre-download the embedding model at BUILD time so the first RAG-triggering
+# request in a freshly started container never pays a network download (plus
+# load) cost on top of Render free tier's 0.1 CPU -- see backend/rag/
+# embeddings.py's lazy-loading docstring, which this does NOT change: a
+# direct-context request still never touches sentence-transformers at
+# runtime, this only guarantees that WHEN a load happens (first real RAG
+# call), it reads from local disk instead of HuggingFace.
+#
+# Runs as appuser (already switched above) and BEFORE `COPY backend`, so:
+#   - huggingface_hub's default cache (~/.cache/huggingface, i.e.
+#     /home/appuser/.cache/huggingface here) is appuser-owned from the
+#     moment it's created -- no later chown, same reasoning as the
+#     useradd/WORKDIR ordering above.
+#   - it's cached across rebuilds unless pyproject.toml/uv.lock change,
+#     exactly like the `uv sync` layer above.
+# Deliberately NOT a --mount=type=cache: that keeps downloaded content
+# OUTSIDE the image (as intended for uv's own wheel cache above), but this
+# model needs to persist INTO the final image layer, not be discarded.
+#
+# The model name is duplicated here rather than read from Settings, since
+# backend/config.py isn't copied into the image until the COPY below --
+# MUST be kept in sync with Settings.embedding_model_name's default in
+# backend/config.py.
+RUN uv run python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+
 # Application code and the frontend build output (from stage 1), at the
 # exact relative path backend/main.py expects (frontend/dist next to
 # backend/, both under the repo root / WORKDIR). --chown here (not a later

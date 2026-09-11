@@ -128,7 +128,7 @@ def _build_tool_registry(
 
 
 @router.post("/query", response_model=OmniFlowResponse)
-async def query_agent(
+def query_agent(
     query: Annotated[str, Form(description="The user's question or instruction.")],
     session_id: Annotated[
         str | None, Form(description="Optional session or conversation identifier.")
@@ -167,7 +167,7 @@ async def query_agent(
     if files:
         for file in files:
             filename = file.filename or "upload"
-            content = await file.read()
+            content = file.file.read()
             declared_mime = file.content_type
             file_payloads.append((content, filename, declared_mime))
             uploaded_inputs.append(

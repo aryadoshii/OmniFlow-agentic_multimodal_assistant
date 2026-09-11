@@ -20,7 +20,7 @@ from backend.models.state import AgentState, WorkflowStatus
 # on these functions at graph-build time to infer routing schemas, which
 # requires AgentState to be resolvable in this module's real runtime namespace.
 
-CheckClarityRoute = Literal["clarification", "plan"]
+CheckClarityRoute = Literal["clarification", "plan", "synthesize"]
 RouteNextRoute = Literal["plan", "synthesize"]
 ValidateOutputRoute = Literal["synthesize", "end"]
 
@@ -28,9 +28,23 @@ ValidateOutputRoute = Literal["synthesize", "end"]
 def route_after_check_clarity(state: AgentState) -> CheckClarityRoute:
     """Branches to the clarification path if the request was flagged ambiguous.
 
-    Reads the existing ``clarification_needed`` flag as-is; this function
-    does not decide ambiguity itself (a future intent/clarity node does).
+    Checks ``status == WorkflowStatus.FAILED`` first, mirroring
+    ``route_after_route_next``'s identical short-circuit: if
+    understand_intent itself failed (e.g. a transient Gemini error that
+    exhausted retries), there is no ``clarification_needed`` signal worth
+    trusting -- that field was never meaningfully set by a node that didn't
+    complete. Proceeding into ``plan``/``execute_tool`` regardless would
+    turn one root-cause failure into a stacked cascade of derived failures
+    ("cannot plan without prior intent classification", then "no plan
+    available to execute"). Going straight to synthesize instead lets that
+    single failure produce one clear error in the final response.
+
+    Otherwise, reads the existing ``clarification_needed`` flag as-is; this
+    function does not decide ambiguity itself (a future intent/clarity node
+    does).
     """
+    if state.status == WorkflowStatus.FAILED:
+        return "synthesize"
     return "clarification" if state.clarification_needed else "plan"
 
 

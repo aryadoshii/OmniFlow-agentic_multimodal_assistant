@@ -14,15 +14,15 @@ Graph shape::
 
     START -> prepare_context -> understand_intent -> check_clarity
                                                           |
-                                    +---------------------+---------------------+
-                                    v                                           v
-                              clarification                                   plan
-                                    |                                           |
-                                   END                                    execute_tool
-                                                                                |
-                                                                         observe_result
-                                                                                |
-                                                                           route_next
+                                    +---------------------+---------------------+---------------------------+
+                                    v                                           v                           v (status == FAILED)
+                              clarification                                   plan                     synthesize
+                                    |                                           |                           |
+                                   END                                    execute_tool              validate_output
+                                                                                |                           |
+                                                                         observe_result        (joins the same synthesize/
+                                                                                |                validate_output loop shown
+                                                                           route_next            below)
                                                                                 |
                                                       +-------------------------+-------------------------+
                                                       v (more work)                                       v (complete)
@@ -108,7 +108,7 @@ def build_graph(
     builder.add_conditional_edges(
         "check_clarity",
         route_after_check_clarity,
-        {"clarification": "clarification", "plan": "plan"},
+        {"clarification": "clarification", "plan": "plan", "synthesize": "synthesize"},
     )
     builder.add_edge("clarification", END)
     builder.add_edge("plan", "execute_tool")

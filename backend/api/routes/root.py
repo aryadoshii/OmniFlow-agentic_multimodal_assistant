@@ -19,7 +19,7 @@ class RootResponse(BaseModel):
 
 
 @router.get("/", response_model=RootResponse)
-async def get_root(settings: Settings = Depends(get_settings)) -> RootResponse:
+def get_root(settings: Settings = Depends(get_settings)) -> RootResponse:
     """Returns root discovery information and endpoints."""
     return RootResponse(
         message="Welcome to OmniFlow - Agentic Multimodal AI Assistant API.",

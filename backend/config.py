@@ -56,6 +56,21 @@ class Settings(BaseSettings):
         gt=0,
         description="Request timeout in seconds for Gemini API calls.",
     )
+    gemini_max_retries: int = Field(
+        default=2,
+        alias="GEMINI_MAX_RETRIES",
+        ge=0,
+        description="Maximum number of retries GeminiProvider performs after an initial "
+        "failed request, for transient errors only (5xx, 429, timeouts, network errors). "
+        "0 disables retries entirely.",
+    )
+    gemini_retry_backoff_seconds: float = Field(
+        default=1.0,
+        alias="GEMINI_RETRY_BACKOFF_SECONDS",
+        ge=0,
+        description="Base delay in seconds for GeminiProvider's exponential backoff "
+        "between retries (delay = backoff * (2 ** attempt)).",
+    )
 
     # Upload and Ingestion Limits
     max_upload_size_mb: int = Field(

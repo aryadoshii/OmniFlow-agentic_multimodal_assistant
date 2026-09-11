@@ -28,7 +28,7 @@ router = APIRouter(prefix="/conversations", tags=["History"])
 
 
 @router.post("", response_model=ConversationSummary, status_code=201)
-async def create_conversation(payload: CreateConversationRequest) -> ConversationSummary:
+def create_conversation(payload: CreateConversationRequest) -> ConversationSummary:
     """Creates a new, empty conversation (called once per new chat, on its first turn)."""
     conversation_id = str(uuid.uuid4())
     row = history_store.create_conversation(conversation_id, payload.title)
@@ -36,13 +36,13 @@ async def create_conversation(payload: CreateConversationRequest) -> Conversatio
 
 
 @router.get("", response_model=list[ConversationSummary])
-async def list_conversations() -> list[ConversationSummary]:
+def list_conversations() -> list[ConversationSummary]:
     """Lists all conversations, most recently updated first (sidebar history)."""
     return [ConversationSummary(**row) for row in history_store.list_conversations()]
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
-async def get_conversation(conversation_id: str) -> ConversationDetail:
+def get_conversation(conversation_id: str) -> ConversationDetail:
     """Fetches one conversation's full messages/attachments (restoring history)."""
     row = history_store.get_conversation(conversation_id)
     if row is None:
@@ -61,7 +61,7 @@ async def get_conversation(conversation_id: str) -> ConversationDetail:
 
 
 @router.post("/{conversation_id}/turns", response_model=ConversationSummary)
-async def save_turn(conversation_id: str, payload: SaveTurnRequest) -> ConversationSummary:
+def save_turn(conversation_id: str, payload: SaveTurnRequest) -> ConversationSummary:
     """Persists one user query + the resulting assistant response as a turn.
 
     The assistant's restorable fields (answer/status/warnings/errors/
@@ -112,7 +112,7 @@ async def save_turn(conversation_id: str, payload: SaveTurnRequest) -> Conversat
 
 
 @router.delete("/{conversation_id}", status_code=204)
-async def delete_conversation(conversation_id: str) -> None:
+def delete_conversation(conversation_id: str) -> None:
     """Permanently deletes a conversation and its messages/attachments."""
     deleted = history_store.delete_conversation(conversation_id)
     if not deleted:

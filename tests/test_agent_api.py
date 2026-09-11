@@ -8,6 +8,8 @@ request handling, graph execution, and response shaping.
 """
 
 import json
+import threading
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -482,3 +484,64 @@ class TestEmbeddingModelCaching:
 
     def test_embedding_service_is_a_real_embedding_service_instance(self) -> None:
         assert isinstance(get_embedding_service(), EmbeddingService)
+
+
+class _SlowLLMProvider(_FakeLLMProvider):
+    """Same fake as above, but sleeps in generate_structured to stand in
+    for a slow real Gemini call (used to prove /health stays responsive
+    while a /query request is still running)."""
+
+    def __init__(self, *args, sleep_seconds: float, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._sleep_seconds = sleep_seconds
+
+    def generate_structured(self, prompt, response_model, system_instruction=None):
+        time.sleep(self._sleep_seconds)
+        return super().generate_structured(prompt, response_model, system_instruction=system_instruction)
+
+
+class TestHealthStaysResponsiveDuringSlowQuery:
+    """Regression test for the event-loop-blocking bug: /query used to be
+    `async def` wrapping fully synchronous, blocking work (ingestion +
+    run_graph's Gemini calls), which froze the whole asyncio event loop --
+    including /health -- for the entire request. Both routes are now plain
+    `def`, so FastAPI runs each in its worker threadpool instead of on the
+    event loop, and one no longer blocks the other.
+
+    This uses a fake LLM provider whose generate_structured() sleeps to
+    simulate a slow Gemini call, fires /query on a background thread, and
+    asserts a concurrent /health call still returns 200 quickly -- while
+    the /query call is still provably in flight."""
+
+    def test_health_returns_promptly_while_query_is_in_flight(self, client: TestClient) -> None:
+        provider = _SlowLLMProvider(
+            {IntentResult: _intent_result(), Plan: Plan(steps=[])},
+            text_output="Slow answer.",
+            sleep_seconds=1.0,
+        )
+        _ = _override_agent_dependencies(client, provider)
+
+        query_done = threading.Event()
+
+        def run_slow_query() -> None:
+            client.post("/query", data={"query": "Do something slow."})
+            query_done.set()
+
+        query_thread = threading.Thread(target=run_slow_query)
+        query_thread.start()
+        time.sleep(0.2)  # give the slow /query request time to actually start
+
+        try:
+            start = time.monotonic()
+            health_response = client.get("/health")
+            elapsed = time.monotonic() - start
+
+            assert health_response.status_code == 200
+            assert elapsed < 0.5
+            # The query must still be running at this point -- otherwise
+            # this test would prove nothing about concurrent responsiveness.
+            assert not query_done.is_set()
+        finally:
+            query_thread.join(timeout=5)
+
+        assert query_done.is_set()
